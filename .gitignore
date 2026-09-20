@@ -1,0 +1,11 @@
+# Local diagnostics and private browser data never belong in this repository.
+.DS_Store
+._*
+node_modules/
+evidence/
+*.log
+*.jsonl
+*.heapsnapshot
+*.ips
+.env
+.env.*
