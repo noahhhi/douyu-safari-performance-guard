@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Douyu Safari Performance Guard
 // @namespace    local.codex.douyu
-// @version      3.6.0
+// @version      3.6.1
 // @description  Lean native Douyu player: retain video, danmaku and controls; unload auxiliary modules; default highest quality, all effects off and 1/4-screen danmaku; prevent FLV preload buffering.
 // @author       noahhhi
 // @license      MIT
@@ -21,9 +21,108 @@
     'use strict';
     if (window.top !== window.self || !/AppleWebKit/.test(navigator.userAgent) ||
         !/Safari/.test(navigator.userAgent) || /Chrome|Chromium|Edg\//.test(navigator.userAgent)) return;
+    const navigation = installRoomNavigationBoundary();
     if (!/^\/\d+\/?$/.test(location.pathname)) return;
     if (window.__douyuSafariGuard) return;
 
+
+    function installRoomNavigationBoundary() {
+        if (window.__douyuRoomNavigation) return window.__douyuRoomNavigation;
+        const room = path => /^\/\d+\/?$/.test(path);
+        const initialPath = location.pathname;
+        const nativePush = history.pushState, nativeReplace = history.replaceState;
+        const restorers = [];
+        let stopped = false, routing = false;
+        function targetURL(value) {
+            try {
+                const url = new URL(value, location.href);
+                return url.origin === location.origin &&
+                    (room(url.pathname) || room(location.pathname)) ? url : null;
+            } catch { return null; }
+        }
+        function reloadTo(url, replace = false, state = null, title = '') {
+            // Retain the history URL, but commit the next room as a Reload.
+            // WebKit excludes the departing document from BFCache for Reload.
+            // Other browser/extension references may still delay reclamation.
+            routing = true;
+            try {
+                Reflect.apply(replace ? nativeReplace : nativePush, history, [state,title,url.href]);
+                location.reload();
+            } finally { routing = false; }
+        }
+        for (const method of ['pushState', 'replaceState']) {
+            const original = history[method];
+            const wrapped = function (...args) {
+                const target = args.length > 2 && args[2] != null ? targetURL(args[2]) : null;
+                // Query/hash bookkeeping remains a same-document operation.
+                if (!stopped && !routing && target && target.pathname !== location.pathname) {
+                    reloadTo(target, method === 'replaceState', args[0], args[1]);
+                    return;
+                }
+                return Reflect.apply(original, this, args);
+            };
+            history[method] = wrapped;
+            restorers.push(() => { if (history[method] === wrapped) history[method] = original; });
+        }
+        function navigate(event) {
+            if (stopped || routing || !event.canIntercept || !event.cancelable || event.hashChange || event.destination?.sameDocument ||
+                event.formData || event.downloadRequest != null || !['push','replace'].includes(event.navigationType)) return;
+            const target = targetURL(event.destination.url);
+            if (!target) return;
+            event.preventDefault();
+            if (target.href === location.href) location.reload();
+            else reloadTo(target, event.navigationType === 'replace');
+        }
+        function click(event) {
+            if (stopped || routing || event.defaultPrevented || event.button !== 0 ||
+                event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+            const anchor = event.target?.closest?.('a[href]');
+            if (!anchor || anchor.hasAttribute('download') || (anchor.target && anchor.target !== '_self')) return;
+            const target = targetURL(anchor.href);
+            if (!target || (target.pathname === location.pathname && target.search === location.search)) return;
+            event.preventDefault(); event.stopImmediatePropagation();
+            reloadTo(target);
+        }
+        function popstate() {
+            if (!stopped && location.pathname !== initialPath && (room(initialPath) || room(location.pathname))) location.reload();
+        }
+        if (window.navigation) window.navigation.addEventListener('navigate', navigate);
+        else window.addEventListener('click', click, true);
+        window.addEventListener('popstate', popstate);
+        const api = {stop() {
+            stopped = true;
+            window.navigation?.removeEventListener('navigate', navigate);
+            window.removeEventListener('click', click, true);
+            window.removeEventListener('popstate', popstate);
+            for (const restore of restorers) restore();
+            delete window.__douyuRoomNavigation;
+        }};
+        Object.defineProperty(window, '__douyuRoomNavigation', {configurable:true, value:api});
+        return api;
+    }
+
+    function installPageLifecycle(dispose) {
+        let disposed = false, restoring = false;
+        function hide(event) {
+            if (disposed) return;
+            disposed = true;
+            dispose();
+        }
+        function show(event) {
+            // A cached page now contains a disposed live player. Recreate it only
+            // on history restoration, never on visibilitychange/background play.
+            if (event.persisted && disposed && !restoring) {
+                restoring = true;
+                location.reload();
+            }
+        }
+        window.addEventListener('pagehide', hide);
+        window.addEventListener('pageshow', show);
+        return {status:()=>({disposed,restoring}), stop() {
+            window.removeEventListener('pagehide', hide);
+            window.removeEventListener('pageshow', show);
+        }};
+    }
 
     function createOptionalResourceGate() {
         let enabled = true;
@@ -158,12 +257,12 @@
             discover: () => !stopped && visit(),
             setEnabled: value => { enabled=!!value; refreshMounted(); },
             status: () => ({enabled, hooks:hooks.size, modules:[...seen], visits, errors:[...errors]}),
-            stop: () => {
+            stop: ({exiting=false}={}) => {
                 stopped=true; enabled=false;
                 for (const [proto, {original, wrapped}] of hooks) {
-                    if (proto.render === wrapped) proto.render=original;
+                    try { if (proto.render === wrapped) proto.render=original; } catch { errors.add('restore-render'); }
                 }
-                hooks.clear(); refreshMounted();
+                hooks.clear(); if (!exiting) refreshMounted();
             },
         };
     }
@@ -211,6 +310,7 @@
         setStartupDefaults();
         let stopped = false, root, style, button, timer, attempts = 0;
         let unmounted = 0, suppressedRenders = 0, defaultsApplied = false;
+        let disposedRoots = 0, releasedMedia = 0;
         let senderHost, senderRenderer;
         const rendererRestorers = [], renderers = new Set();
         const failures = new Set();
@@ -427,20 +527,55 @@
         tick();
         return {
             status: () => ({enabled, attached:!!root?.isConnected, rendererHooks:renderers.size,
-                unmounted, suppressedRenders, defaultsApplied, nativeSender:!!senderHost?.isConnected, playerModules:moduleTrim?.status(), failures:[...failures]}),
-            stop: () => {
+                unmounted, suppressedRenders, defaultsApplied, disposedRoots, releasedMedia, nativeSender:!!senderHost?.isConnected, playerModules:moduleTrim?.status(), failures:[...failures]}),
+            disposePlayer: () => {
+                const media = [...document.querySelectorAll('#js-player-video-case video,#js-player-video-case audio')];
+                // Resolve the native owner rather than unmount its outer React
+                // tree using the room's different ReactDOM version. The native
+                // destroy API unmounts its own root with the matching renderer,
+                // resets stream services and clears player event registries.
+                const ownerRoot = document.getElementById('js-player-video-widgets')
+                    ?._reactRootContainer?._internalRoot?.current;
+                const queue = ownerRoot ? [ownerRoot] : [], destroyed = new Set();
+                let scanned = 0;
+                while (queue.length && scanned++ < 2500) {
+                    const fiber = queue.pop(), owner = fiber.stateNode, player = owner?.player;
+                    if (player && typeof player.destroy === 'function' &&
+                        player.dom?.id === 'room-html5-player' && !destroyed.has(player)) {
+                        destroyed.add(player);
+                        try { player.destroy(); disposedRoots++; } catch { failures.add('dispose:player'); }
+                    }
+                    if (fiber.sibling) queue.push(fiber.sibling);
+                    if (fiber.child) queue.push(fiber.child);
+                }
+                for (const video of media) {
+                    try {
+                        video.pause(); video.srcObject=null;
+                        video.removeAttribute('src');
+                        for (const source of video.querySelectorAll('source')) source.removeAttribute('src');
+                        video.load(); releasedMedia++;
+                    } catch { failures.add('dispose:media'); }
+                }
+            },
+            stop: ({exiting=false}={}) => {
                 stopped=true; clearTimeout(timer);
                 document.removeEventListener('load', onScriptLoad, true);
-                moduleTrim?.stop();
-                for (const restore of rendererRestorers.reverse()) restore();
+                moduleTrim?.stop({exiting});
+                for (const restore of rendererRestorers.reverse()) {
+                    try { restore(); } catch { failures.add('restore-renderer'); }
+                }
                 document.removeEventListener('click', onShieldClick, true);
                 document.removeEventListener('keydown', onQuickSendKey, true);
-                if (senderHost) { senderRenderer?.unmountComponentAtNode(senderHost); senderHost.remove(); senderHost=null; }
+                if (senderHost) {
+                    try { senderRenderer?.unmountComponentAtNode(senderHost); } catch { failures.add('dispose:sender'); }
+                    senderHost.remove(); senderHost=null;
+                }
                 style?.remove(); button?.remove();
                 for (const el of document.querySelectorAll('[data-dy-clean-path],[data-dy-clean-core]')) {
                     el.removeAttribute('data-dy-clean-path'); el.removeAttribute('data-dy-clean-core');
                 }
-                root=null;
+                root=null; senderRenderer=null; style=null; button=null;
+                renderers.clear(); rendererRestorers.length=0;
                 // Component unmounting is irreversible in-place; reload restores
                 // the complete site. The visible mode button performs that reload.
             },
@@ -498,7 +633,7 @@
     const startupQuality = installStartupQuality();
     let clean;
     try { clean = createCleanController(); } catch {}
-    const version = '3.6.0';
+    const version = '3.6.1';
     const startedAt = Date.now();
     const restorers = [];
     const marked = new WeakSet();
@@ -582,19 +717,30 @@
     watchHead();
     document.addEventListener('DOMContentLoaded', watchHead, {once: true});
 
+    const cleanupErrors = new Set();
+    function stopGuard(exiting = false) {
+        if (!active) return;
+        active = false;
+        const release = (stage, fn) => { try { fn(); } catch { cleanupErrors.add(stage); } };
+        if (exiting) release('player', () => clean?.disposePlayer());
+        release('resources', () => optionalResources.stop());
+        release('startup', () => startupQuality.stop());
+        release('clean', () => clean?.stop({exiting}));
+        release('observer', () => observer?.disconnect()); observer=null;
+        document.removeEventListener('DOMContentLoaded', watchHead);
+        for (const restore of restorers.reverse()) release('dom-hook', restore);
+        restorers.length=0;
+        release('navigation', () => navigation.stop());
+    }
+    const lifecycle = installPageLifecycle(() => stopGuard(true));
     Object.defineProperty(window, '__douyuSafariGuard', {
         configurable: true,
         value: Object.freeze({
             status: () => ({version, active, blockedLivePreloads: blocked,
-                latePreloads: late, startedAt, readyStateAtInstall, optionalResources:optionalResources.status(), startupQuality:startupQuality.status(), clean: clean?.status()}),
+                latePreloads: late, startedAt, readyStateAtInstall, lifecycle:lifecycle.status(), cleanupErrors:[...cleanupErrors], optionalResources:optionalResources.status(), startupQuality:startupQuality.status(), clean: clean?.status()}),
             disable: () => {
-                active = false;
-                optionalResources.stop();
-                startupQuality.stop();
-                clean?.stop();
-                observer?.disconnect();
-                document.removeEventListener('DOMContentLoaded', watchHead);
-                for (const restore of restorers.reverse()) restore();
+                lifecycle.stop();
+                stopGuard();
                 delete window.__douyuSafariGuard;
             },
         }),

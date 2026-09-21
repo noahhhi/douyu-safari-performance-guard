@@ -1,11 +1,11 @@
 {
   "name": "douyu-safari-performance-guard",
-  "version": "3.6.0",
+  "version": "3.6.1",
   "private": true,
   "description": "Safari userscript for lean Douyu live playback",
   "license": "MIT",
   "scripts": {
-    "test": "node --check douyu-safari-performance-guard.user.js && node tests/release-metadata.cjs && node tests/optional-resource-gate.cjs"
+    "test": "node --check douyu-safari-performance-guard.user.js && node tests/release-metadata.cjs && node tests/optional-resource-gate.cjs && node tests/page-lifecycle.cjs"
   },
   "engines": {
     "node": ">=22"

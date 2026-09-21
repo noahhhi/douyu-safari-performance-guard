@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Douyu Safari Performance Guard
 // @namespace    local.codex.douyu
-// @version      3.6.0
+// @version      3.6.1
 // @description  Lean native Douyu player: retain video, danmaku and controls; unload auxiliary modules; default highest quality, all effects off and 1/4-screen danmaku; prevent FLV preload buffering.
 // @author       noahhhi
 // @license      MIT
