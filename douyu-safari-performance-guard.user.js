@@ -309,9 +309,12 @@
         }
         setStartupDefaults();
         let stopped = false, root, style, button, timer, attempts = 0;
-        let unmounted = 0, suppressedRenders = 0, defaultsApplied = false;
+        let unmounted = 0, suppressedRenders = 0;
+        // pending → applied | user (a real settings click) | timeout.
+        let defaultsState = 'pending', defaultsTries = 0;
+        const defaultsLimit = 40, senderRetries = 3;
         let disposedRoots = 0, releasedMedia = 0;
-        let senderHost, senderRenderer;
+        let senderHost, senderRenderer, senderMisses = 0;
         const rendererRestorers = [], renderers = new Set();
         const failures = new Set();
         const css = `
@@ -404,23 +407,45 @@
             delete persisted.smallGift;
             try { writeNative('chat-shield-config', JSON.stringify(persisted)); } catch {}
         }
+        function isDanmuModeOption(el) {
+            for (let node=el, depth=0; node && depth<3; node=node.parentElement, depth++) {
+                if (node.matches?.('[class^="iconLabel-"]') ||
+                    node.querySelector?.(':scope > [class^="iconLabel-"]')) return true;
+            }
+            return false;
+        }
+        function onSettingsChoice(event) {
+            // The user's own shield/danmaku choice always wins over startup defaults.
+            // Synthetic clicks issued by applyNativeControls are not trusted.
+            if (!event.isTrusted || defaultsState !== 'pending') return;
+            const target = event.target;
+            if (!target?.closest?.('#js-player-controlbar')) return;
+            if (target.closest('[class^="shieldSettingItem-"]') || isDanmuModeOption(target)) defaultsState = 'user';
+        }
+        document.addEventListener('click', onSettingsChoice, true);
         document.addEventListener('click', onShieldClick, true);
         function applyNativeControls() {
-            if (defaultsApplied || !document.querySelector('#js-player-controlbar')) return;
+            if (defaultsState !== 'pending' || !document.querySelector('#js-player-controlbar')) return;
             const items = [...document.querySelectorAll('[class^="shieldSettingItem-"]')];
             const quarter = [...document.querySelectorAll('[class^="iconLabel-"]')].find(e => e.textContent === '1/4屏');
             if (items.length < 7 || !quarter) return;
             const checked = items.every(item => item.querySelector('[class^="checked-"]'));
             const quarterSelected = quarter.parentElement.style.backgroundImage.includes('quarterscreen_select');
             if (checked && quarterSelected) {
-                defaultsApplied = true; return;
+                defaultsState = 'applied'; return;
             }
+            // Bounded: if the native state is never recognised (changed markup),
+            // stop instead of overriding the player every 2 s for the page's life.
+            if (++defaultsTries > defaultsLimit) {
+                defaultsState = 'timeout'; failures.add('native-defaults'); return;
+            }
+            const cycle = (defaultsTries - 1) % 8 === 0;
             // Initialize the same native player event without mounting the sidebar.
             if (!quarterSelected) quarter.parentElement.click();
-            if (enabled && typeof window.__player?.acjCall === 'function' && attempts % 8 === 0) {
+            if (enabled && typeof window.__player?.acjCall === 'function' && cycle) {
                 const config = Object.fromEntries(Object.values(shieldKeys).map(key => [key, 1]));
                 window.__player.acjCall('js_shieldEffects', config);
-            } else if (!enabled && attempts > 12 && attempts % 8 === 0) {
+            } else if (!enabled && defaultsTries > 12 && cycle) {
                 const unchecked = items.find(item => !item.querySelector('[class^="checked-"]'));
                 if (unchecked) unchecked.click();
             }
@@ -434,38 +459,44 @@
             }
             return null;
         }
+        function senderMiss() {
+            // A structural miss means the site's sidebar changed. Retry briefly,
+            // then stop instead of rebuilding element trees on every tick.
+            if (++senderMisses >= senderRetries) failures.add('native-sender');
+        }
         function setupNativeSender() {
-            if (senderHost?.isConnected || !document.body || !window.PlayerAsideApp) return;
+            if (senderHost?.isConnected || senderMisses >= senderRetries || !document.body ||
+                !window.PlayerAsideApp || !renderers.size) return;
             try {
                 const app = window.PlayerAsideApp;
+                const component = app.container.get('component')?.WrappedComponent;
+                if (!component?.prototype?.render) return;
                 const aside = document.getElementById('js-player-asideMain');
                 // The suppressed hydration leaves server HTML behind. Remove its
                 // duplicate ChatSend fields before the native sender queries DOM.
                 if (aside && !aside._reactRootContainer) aside.replaceChildren();
-                const component = app.container.get('component')?.WrappedComponent;
-                if (!component?.prototype?.render) return;
                 // Read element descriptions only: do not mount the sidebar or run
                 // its constructor/lifecycle. Select just the native send component.
                 const tree = component.prototype.render.call({props:{}, getRoomSkinStyle:()=>({})});
                 const chat = findElement(tree, e => e.props?.className === 'layout-Player-chat')?.props.children;
-                if (typeof chat?.type !== 'function') return;
+                if (typeof chat?.type !== 'function') return senderMiss();
                 const speak = findElement(chat.type({}), e => e.props?.className === 'Chat-speak');
                 const speakClass = speak?.type?.WrappedComponent;
-                if (!speakClass?.prototype?.render) return;
+                if (!speakClass?.prototype?.render) return senderMiss();
                 const sendTree = speakClass.prototype.render.call({props:{},state:{}});
                 const send = findElement(sendTree, e => typeof e.type?.WrappedComponent?.prototype?.enterSend === 'function');
-                if (!send) return;
+                if (!send) return senderMiss();
                 const exports = Object.values(window._room_common_?.c || {}).map(m => m.exports);
                 const react = exports.find(e => e?.createElement && e?.useState);
                 const redux = exports.find(e => e?.Provider && e?.ReactReduxContext && e?.connect);
                 const dom = [...renderers][0];
-                if (!react || !redux || !dom) return;
+                if (!react || !redux) return senderMiss();
                 senderHost = document.createElement('div'); senderHost.id='douyu-clean-send-service';
                 senderHost.hidden=true; document.body.append(senderHost);
                 dom.render(react.createElement(redux.Provider,{store:app.container.get('store')},
                     react.createElement(send.type)),senderHost);
                 senderRenderer=dom;
-            } catch { failures.add('native-sender'); senderHost?.remove(); senderHost=null; }
+            } catch { senderMiss(); senderHost?.remove(); senderHost=null; }
         }
         function onQuickSendKey(event) {
             if (!enabled || event.key !== 'Enter') return;
@@ -477,7 +508,10 @@
             }
             if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
             const target = event.target;
-            if (target?.matches?.('input,textarea,select') || target?.isContentEditable) return;
+            // Enter activates a focused control; only redirect it from non-interactive focus.
+            if (target?.closest?.('input,textarea,select,button,a[href],summary,[role="button"],[role="link"],' +
+                '[role="checkbox"],[role="switch"],[role="tab"],[role="menuitem"],[role="option"],[role="slider"]') ||
+                target?.isContentEditable) return;
             event.preventDefault(); event.stopPropagation(); input.focus();
         }
         document.addEventListener('keydown', onQuickSendKey, true);
@@ -522,12 +556,12 @@
             // mutation polling. A 2 s check handles native modules arriving later
             // and room navigation while keeping only the current root reference.
             attempts++;
-            timer=setTimeout(tick, attempts < 80 && (!renderers.size || !defaultsApplied) ? 250 : 2000);
+            timer=setTimeout(tick, attempts < 80 && (!renderers.size || defaultsState === 'pending') ? 250 : 2000);
         }
         tick();
         return {
             status: () => ({enabled, attached:!!root?.isConnected, rendererHooks:renderers.size,
-                unmounted, suppressedRenders, defaultsApplied, disposedRoots, releasedMedia, nativeSender:!!senderHost?.isConnected, playerModules:moduleTrim?.status(), failures:[...failures]}),
+                unmounted, suppressedRenders, defaultsApplied:defaultsState === 'applied', defaults:defaultsState, disposedRoots, releasedMedia, nativeSender:!!senderHost?.isConnected, playerModules:moduleTrim?.status(), failures:[...failures]}),
             disposePlayer: () => {
                 const media = [...document.querySelectorAll('#js-player-video-case video,#js-player-video-case audio')];
                 // Resolve the native owner rather than unmount its outer React
@@ -564,6 +598,7 @@
                 for (const restore of rendererRestorers.reverse()) {
                     try { restore(); } catch { failures.add('restore-renderer'); }
                 }
+                document.removeEventListener('click', onSettingsChoice, true);
                 document.removeEventListener('click', onShieldClick, true);
                 document.removeEventListener('keydown', onQuickSendKey, true);
                 if (senderHost) {
