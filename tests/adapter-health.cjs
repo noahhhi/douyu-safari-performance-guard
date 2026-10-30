@@ -11,7 +11,12 @@ function environment() {
         performance:{now:()=>now}, localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
         setTimeout:(fn,delay)=>{const id=++nextTimer;timers.set(id,{fn,delay});return id;},clearTimeout:id=>timers.delete(id),queueMicrotask:()=>{}};
     return {context, timers, elements, selectors, storage, time:value=>now=value,
-        tick(time) {now=time;assert.equal(timers.size,1,'only the existing controller timer');const [id,{fn}]=timers.entries().next().value;timers.delete(id);fn();}};
+        tick(time) {now=time;
+            // The controller's 250 ms / 2 s timer; quality recovery may own one bounded 100 ms poll.
+            const controller=[...timers].filter(([,t])=>t.delay>=250);
+            assert.equal(controller.length,1,'only the existing controller timer');
+            assert.ok(timers.size<=2,'at most one extra bounded poll');
+            const [[id,{fn}]]=controller;timers.delete(id);fn();}};
 }
 {
     const h=environment(), c=load(h.context), health=c.createAdapterHealth();

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Douyu Safari Performance Guard
 // @namespace    local.codex.douyu
-// @version      3.6.1
+// @version      3.7.0
 // @description  Lean native Douyu player: retain video, danmaku and controls; unload auxiliary modules; default highest quality, all effects off and 1/4-screen danmaku; prevent FLV preload buffering.
 // @author       noahhhi
 // @license      MIT
@@ -19,99 +19,122 @@
 
 (() => {
     'use strict';
+    // Injection timing: Safari Tampermonkey does not guarantee document-start.
+    const readyStateAtInstall = document.readyState, installedAtMs = Math.round(performance.now());
 
     // DOUYU ADAPTER CONTRACTS — 网站更新时先维护此区；算法与浏览器挂钩在下面。
     // 查找方法见 docs/maintenance.md。规则只列已经验证的独立业务，默认集合不扩张。
     // 自定义 rules: {host: 字符串或 RegExp, pkg?: 包目录, fileRegex?: 文件名正则,
-    // pathnameRegex?: 路径正则, kinds?: ['script','link' 或 'iframe']}。
+    // pathnameRegex?: 路径正则, kinds?: ['script','link' 或 'iframe'], when?: () => 布尔}。
     // host 必填；省略 pkg 表示不要求 front-publish 路径；默认 kinds 为 script/link。
     const DOUYU = {
         roomPath: /^\/\d+\/?$/, // 地址栏：仅数字房间路径；别名房间仍不纳入。
         resourceHost: /(?:^|\.)douyucdn\.cn$/, // Network：独立静态分包的 CDN 主机后缀。
         packageSegment: 'front-publish', // Network：URL 中包目录的上一层。
+        // 独立业务包：Network 中 front-publish/<包名>/ 的包名；确认与播放、登录、聊天无关后整包阻断。
         resourceCategories: {
             activity: {enabled:true, packages:[
-                'live-act-diamond-carnival-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-activity-common-pendant-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-activity-modules-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-anchor-collect-task-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-coconut-fantasy-island-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-crazy-interstellar-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-desert-relic-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-duel-peak-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-magic-awakening-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-new-anchor-support-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-pandora-box-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-super-fans-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-the-great-voyage-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-water-friends-festival-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-diamond-fans-match-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-tiger-envelope-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-skit-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-task-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
+                'live-act-diamond-carnival-master',
+                'live-activity-common-pendant-master',
+                'live-activity-modules-master',
+                'live-anchor-collect-task-master',
+                'live-coconut-fantasy-island-master',
+                'live-crazy-interstellar-master',
+                'live-desert-relic-master',
+                'live-duel-peak-master',
+                'live-magic-awakening-master',
+                'live-new-anchor-support-master',
+                'live-pandora-box-master',
+                'live-super-fans-master',
+                'live-the-great-voyage-master',
+                'live-water-friends-festival-master',
+                'live-diamond-fans-match-master',
+                'live-tiger-envelope-master',
+                'live-skit-master',
+                'live-task-master',
             ]},
             gifts: {enabled:true, packages:[
-                'live-activity-gift-hall-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-activity-gift-naming-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-advanced-gift-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-random-effect-gift-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-random-effect-gift-v3-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-random-effect-gift-v4-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-wishing-gift-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'new-revenue-web-front-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-business-component-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-confession-gift-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-recharge-feedback-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
+                'live-activity-gift-hall-master',
+                'live-activity-gift-naming-master',
+                'live-advanced-gift-master',
+                'live-random-effect-gift-master',
+                'live-random-effect-gift-v3-master',
+                'live-random-effect-gift-v4-master',
+                'live-wishing-gift-master',
+                'new-revenue-web-front-master',
+                'live-business-component-master',
+                'live-confession-gift-master',
+                'live-recharge-feedback-master',
             ]},
             games: {enabled:true, packages:[
-                'live-pubg-game-prop-shop-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-game-guess-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-pk-progress-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
+                'live-pubg-game-prop-shop-master',
+                'live-game-guess-master',
+                'live-pk-progress-master',
             ]},
             community: {enabled:true, packages:[
-                'audio-social-web-front-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'yuba-hot-topic-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
+                'audio-social-web-front-master',
+                'yuba-hot-topic-master',
             ]},
             admin: {enabled:true, packages:[
-                'live-test-get-anchor-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'room-admin-menu-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-account-transactions-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
-                'live-anchor-interactive-tool-master', // Network → front-publish 包目录；确认独立业务后按原名维护。
+                'live-test-get-anchor-master',
+                'room-admin-menu-master',
+                'live-account-transactions-master',
+                'live-anchor-interactive-tool-master',
             ]},
             aside: {enabled:true, packages:[]}, // 侧栏视觉分包；名称来自 Network/webpack chunk 映射。
-            analytics: {enabled:true, packages:[], rules:[]}, // 预留分类；未验证前不加拦截项。
+            // 房间页独立挂件：live-next-master/js/room/<名称>_<hash>.js，由 SHARK 加载器插入；
+            // 加载器 onerror 继续队列。sign 是广告位（不是登录），chatInteration 是投票互动
+            // （原生发送器在 live-next-player-aside 主包），superFans 渲染 #js-room-activity。
+            // 播放器 React.lazy 子模块（WarGame、SvgaPlayer 等）失败会拒绝 Suspense，不可加入。
+            roomWidgets: {enabled:true, rules:[
+                {host:/(?:^|\.)douyucdn\.cn$/, pkg:'live-next-master',
+                    fileRegex:/^(?:sign|asideTopSuspension|chatInteration|lotteryDraw|superFans)_/},
+            ]},
+            // 主播/超管工具：menu 仅在 uid===owner_uid 或 groupId===5 时渲染；普通观众不需要。
+            anchorTools: {enabled:true, rules:[
+                {host:/(?:^|\.)douyucdn\.cn$/, pkg:'live-next-master', fileRegex:/^(?:menu|superMenu)_/},
+            ]},
+            // 统计 SDK：配合 installAnalyticsSinks()；页面 inline 只在全局不存在时创建队列。
+            analytics: {enabled:true, rules:[
+                {host:'hm.baidu.com', pathnameRegex:/^\/hm\.js$/},
+                {host:'www.googletagmanager.com', pathnameRegex:/^\/gtag\/js$/},
+                // 业务代码直接等待 collectEvent('getToken'|'getAllVars'|'getVar') 回调；
+                // 只有本脚本的回调替身先就位时才阻断，晚注入时保留真实 SDK。
+                {host:'lf3-data.volccdn.com', fileRegex:/^collect-rangers-v[\d.]+\.js$/,
+                    when:() => window.collectEvent?.douyuGuardSink === true},
+            ]},
         },
         asidePackage: 'live-next-player-aside-master', // Network：保留主入口，只阻断下列独立 chunk。
         asideChunks: [ // Network/webpack：侧栏独立 chunk 名；匹配名称后紧跟 `_`，不匹配主入口。
-            'NobleReminder', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'ChatRankAll', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'FansRankAll', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'DiamondsFansRankBottom', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'BarrageGroup', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'SvgaConfigEffectContainer', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'YBCommunity', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'DiamondsFansEffect', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'TbActPopup', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'ChatEffect', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'AnchorLevelUp', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'FollowTips', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'WishGiftMsg', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'PrivilegeGift', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'HighEnergyTips', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'FansFeedback', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'StarVoteTips', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'MatchSystemV2Card', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'ProgramBookletTips', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'PopularBarrage', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'MedalDialog', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'MedalPanel', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'MedalDroppingPanel', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'UserGuide', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'UpgradeEffect', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'GuideBarrage', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'HotBarrage', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'BarrageCounter', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
-            'UserGameDataPanel', // 侧栏视觉/业务模块；在该包 chunk 映射中复核名称。
+            'NobleReminder',
+            'ChatRankAll',
+            'FansRankAll',
+            'DiamondsFansRankBottom',
+            'BarrageGroup',
+            'SvgaConfigEffectContainer',
+            'YBCommunity',
+            'DiamondsFansEffect',
+            'TbActPopup',
+            'ChatEffect',
+            'AnchorLevelUp',
+            'FollowTips',
+            'WishGiftMsg',
+            'PrivilegeGift',
+            'HighEnergyTips',
+            'FansFeedback',
+            'StarVoteTips',
+            'MatchSystemV2Card',
+            'ProgramBookletTips',
+            'PopularBarrage',
+            'MedalDialog',
+            'MedalPanel',
+            'MedalDroppingPanel',
+            'UserGuide',
+            'UpgradeEffect',
+            'GuideBarrage',
+            'HotBarrage',
+            'BarrageCounter',
+            'UserGameDataPanel',
         ],
         resourceRules: [
             {category:'games', host:'game.weixin.qq.com', pathnameRegex:/\/wxgamesdk\.js$/}, // Network：小游戏 SDK；保留原路径末尾匹配。
@@ -122,43 +145,43 @@
             {category:'games', host:'game.weixin.qq.com', pathnameRegex:/\/wxgamesdkframe\.html$/, kinds:['iframe']}, // Elements/Network：小游戏子页。
         ],
         playerModules: [
-            'videoEnhanced', // 原生可选模块；React fiber memoizedProps.id + 连接器订阅确认。
-            'gameQRCode', // 原生可选模块；React fiber memoizedProps.id + 连接器订阅确认。
-            'PKView', // 原生可选模块；React fiber memoizedProps.id + 连接器订阅确认。
-            'ActivePK', // 原生可选模块；React fiber memoizedProps.id + 连接器订阅确认。
-            'gameHotArea', // 原生可选模块；React fiber memoizedProps.id + 连接器订阅确认。
-            'broadcast', // 原生可选模块；React fiber memoizedProps.id + 连接器订阅确认。
-            'customBroadcast', // 原生可选模块；React fiber memoizedProps.id + 连接器订阅确认。
-            'noticeBarrage', // 原生可选模块；React fiber memoizedProps.id + 连接器订阅确认。
-            'yzPkHours', // 原生可选模块；React fiber memoizedProps.id + 连接器订阅确认。
-            'warGameUserPanel', // 原生可选模块；React fiber memoizedProps.id + 连接器订阅确认。
-            'voiceActUpgrade', // 原生可选模块；React fiber memoizedProps.id + 连接器订阅确认。
-            'hitSong', // 原生可选模块；React fiber memoizedProps.id + 连接器订阅确认。
-            'voiceActProgress', // 原生可选模块；React fiber memoizedProps.id + 连接器订阅确认。
-            'commentRoleHelp', // 原生可选模块；React fiber memoizedProps.id + 连接器订阅确认。
-            'gameLightDanmuCheer', // 原生可选模块；React fiber memoizedProps.id + 连接器订阅确认。
-            'userPK', // 原生可选模块；React fiber memoizedProps.id + 连接器订阅确认。
-            'videoAd', // 原生可选模块；React fiber memoizedProps.id + 连接器订阅确认。
-            'userNoHandleAd', // 原生可选模块；React fiber memoizedProps.id + 连接器订阅确认。
-            'shelterAd', // 原生可选模块；React fiber memoizedProps.id + 连接器订阅确认。
-            'hyad', // 原生可选模块；React fiber memoizedProps.id + 连接器订阅确认。
-            'anchorMaiMai', // 原生可选模块；React fiber memoizedProps.id + 连接器订阅确认。
-            'conMicroPhone', // 原生可选模块；React fiber memoizedProps.id + 连接器订阅确认。
+            'videoEnhanced',
+            'gameQRCode',
+            'PKView',
+            'ActivePK',
+            'gameHotArea',
+            'broadcast',
+            'customBroadcast',
+            'noticeBarrage',
+            'yzPkHours',
+            'warGameUserPanel',
+            'voiceActUpgrade',
+            'hitSong',
+            'voiceActProgress',
+            'commentRoleHelp',
+            'gameLightDanmuCheer',
+            'userPK',
+            'videoAd',
+            'userNoHandleAd',
+            'shelterAd',
+            'hyad',
+            'anchorMaiMai',
+            'conMicroPhone',
         ], // React player fiber 的 memoizedProps.id；确认只卸载视觉/业务模块，保留原生控制与通信。
         removeIds: [
-            'js-header', // 辅助根；Elements 对照独立容器与 React 根，不包含核心播放/通信。
-            'js-player-asideMain', // 辅助根；Elements 对照独立容器与 React 根，不包含核心播放/通信。
-            'js-player-toolbar', // 辅助根；Elements 对照独立容器与 React 根，不包含核心播放/通信。
-            'js-bottom-left', // 辅助根；Elements 对照独立容器与 React 根，不包含核心播放/通信。
-            'js-room-activity', // 辅助根；Elements 对照独立容器与 React 根，不包含核心播放/通信。
-            'js-room-top-banner', // 辅助根；Elements 对照独立容器与 React 根，不包含核心播放/通信。
-            'js-player-asideTopSuspension', // 辅助根；Elements 对照独立容器与 React 根，不包含核心播放/通信。
-            'js-custom-group', // 辅助根；Elements 对照独立容器与 React 根，不包含核心播放/通信。
-            'js-player-video-above', // 辅助根；Elements 对照独立容器与 React 根，不包含核心播放/通信。
-            'js-player-guessgame', // 辅助根；Elements 对照独立容器与 React 根，不包含核心播放/通信。
-            'js-pk-progress', // 辅助根；Elements 对照独立容器与 React 根，不包含核心播放/通信。
-            'js-player-dialog', // 辅助根；Elements 对照独立容器与 React 根，不包含核心播放/通信。
-            'js-player-for-audio', // 辅助根；Elements 对照独立容器与 React 根，不包含核心播放/通信。
+            'js-header',
+            'js-player-asideMain',
+            'js-player-toolbar',
+            'js-bottom-left',
+            'js-room-activity',
+            'js-room-top-banner',
+            'js-player-asideTopSuspension',
+            'js-custom-group',
+            'js-player-video-above',
+            'js-player-guessgame',
+            'js-pk-progress',
+            'js-player-dialog',
+            'js-player-for-audio',
         ], // Elements：独立 React 根容器 ID；不要添加播放器、登录或聊天通信根。
         ids: {
             player: 'room-html5-player', // Elements + React root：播放器模块连接器树。
@@ -179,6 +202,8 @@
             cleanMode: 'douyu-safari-clean-mode', // 本脚本拥有；on/off 与历史版本兼容。
             shield: 'chat-shield-config', // Storage：改一次原生屏蔽设置并对照 JSON envelope。
             preload: 'h5StreamPreload_h5p_room', // Storage/首流加载代码：自动档流缓存。
+            // Storage：用户在清晰度菜单选择后写入的三个偏好（h5-plugin onChangeHandler）。
+            ratePreferences: ['realRateModel2_h5p_room', 'realRateModel_h5p_room', 'player_storage_rate_h5p_room'],
         },
         storageDefaults: {
             player_storage_danmu_Model_h5p_room: 4, // Douyu's native 1/4-screen enum.
@@ -211,7 +236,11 @@
         runtime: {
             moduleCache: () => window._room_common_?.c, // 页面脚本/webpack runtime：React、ReactDOM、Redux exports 缓存。
             asideApp: () => window.PlayerAsideApp, // 页面脚本：侧栏 DI 容器及原生 ChatSend 组件。
-            player: () => window.__player, // 页面脚本：原生 acjCall bridge。
+            player: () => window.__player, // 页面脚本：原生 acjCall bridge；handleAcj 为新播放器业务桥。
+            // 清晰度菜单最终调用 handleAcj('loadWithoutPerception','changeRate',[{rate}])；搜索 "loadWithoutPerception/changeRate"。
+            rateChange: ['loadWithoutPerception', 'changeRate'],
+            // 播放器插件 Immutable store：Connect 实例的 getStore()；字段见 h5-plugin mapStateToProps。
+            playerStore: instance => typeof instance?.getStore === 'function' ? instance.getStore()?.getState?.() : null,
             moduleConnector: instance => !!instance?.unsubscribeListener, // React fiber：可选模块连接器持有原生 store 退订函数。
             nativeOwner: instance => instance?.player, // owner 根的 React fiber：stateNode.player 才是拥有 destroy() 的原生实例。
             senderElement: element => typeof element.type?.WrappedComponent?.prototype?.enterSend === 'function', // 侧栏 render 树：以原生 enterSend 方法识别发送组件。
@@ -391,6 +420,7 @@
                 if (rule.pkg != null && rule.pkg !== pkg) continue;
                 if (rule.fileRegex && !matches(rule.fileRegex, file)) continue;
                 if (rule.pathnameRegex && !matches(rule.pathnameRegex, u.pathname)) continue;
+                if (rule.when && !rule.when()) continue;
                 return true;
             }
             return false;
@@ -985,11 +1015,152 @@
         };
     }
 
+    // Analytics sinks — 阻断统计 SDK 前先放置无增长的全局入口；依赖 resourceCategories.analytics。
+    // 页面 inline 代码只在全局不存在时创建队列（collectEvent、dataLayer），所以必须早于它们；
+    // 晚注入时不替换已有对象，collect-rangers 规则也随之失效，真实 SDK 照常加载。
+    function installAnalyticsSinks() {
+        const installed = [];
+        let enabled = DOUYU.resourceCategories.analytics.enabled;
+        try { enabled = enabled && localStorage.getItem(DOUYU.storageKeys.cleanMode) !== 'off'; } catch {}
+        if (!enabled) return {installed};
+        const sink = () => {
+            const queue = [];
+            Object.defineProperty(queue, 'push', {configurable:true, value:() => 0});
+            return queue;
+        };
+        for (const name of ['_hmt', 'dataLayer']) {
+            if (window[name] === undefined) { window[name] = sink(); installed.push(name); }
+        }
+        if (window.collectEvent === undefined) {
+            // Only commands whose callers await a callback need an answer; the
+            // values are the SDK's own "no data" results the callers already handle.
+            const collectEvent = function (command, ...args) {
+                let callback, value;
+                if (command === 'getToken') { callback = args[0]; value = {ssid:'', web_id:''}; }
+                else if (command === 'getAllVars') { callback = args[0]; value = {}; }
+                else if (command === 'getVar') { callback = args[2]; value = args[1]; }
+                if (typeof callback === 'function') queueMicrotask(() => callback(value));
+            };
+            collectEvent.q = sink();
+            collectEvent.l = Date.now();
+            collectEvent.douyuGuardSink = true;
+            window.collectEvent = collectEvent;
+            installed.push('collectEvent');
+        }
+        return {installed};
+    }
+
+    // Quality recovery — 晚注入错过首流改写时，播放器就绪后调用一次原生换流到原画；
+    // 依赖 storageKeys.ratePreferences、runtime.rateChange/playerStore、ids.player。
+    // 只在保存的偏好为原画(0)时行动；用户操作、偏好变化或原生换流出现即让步，不重试。
+    function createQualityRecovery() {
+        const keys = DOUYU.storageKeys.ratePreferences, [bridgeId, bridgeAction] = DOUYU.runtime.rateChange;
+        const userEvents = ['pointerdown', 'keydown'];
+        const deadline = performance.now() + 15000, path = location.pathname;
+        let timer = null, phase = 'waiting', issued = false, owner = null, original = null, wrapper = null;
+        let initial = null, last = null;
+        const read = () => keys.map(key => { try { return localStorage.getItem(key); } catch { return null; } });
+        function savedOriginal(raw) {
+            try {
+                const record = JSON.parse(raw);
+                return record?.r === 1 && record.e > Date.now() && JSON.parse(record.v) === 0;
+            } catch { return false; }
+        }
+        function finish(reason) {
+            if (phase !== 'waiting') return;
+            phase = reason;
+            clearTimeout(timer); timer = null;
+            for (const type of userEvents) document.removeEventListener(type, onUser, true);
+            try { if (owner?.handleAcj === wrapper) owner.handleAcj = original; } catch {}
+            owner = original = wrapper = null;
+        }
+        function onUser(event) {
+            // Any trusted input yields: missing a recovery is better than
+            // overriding a quality the viewer is about to choose.
+            if (event.isTrusted) finish('user-input');
+        }
+        function attachBridge() {
+            const player = DOUYU.runtime.player();
+            if (owner) return owner === player && player.handleAcj === wrapper;
+            if (typeof player?.handleAcj !== 'function') return false;
+            owner = player; original = player.handleAcj;
+            const native = original;
+            wrapper = function (id, action) {
+                // Yield to any native stream change (manual menu or the site's own
+                // delayed preference restore) instead of issuing a duplicate.
+                // finish() unhooks and clears `original`; always forward to `native`.
+                if ((id === bridgeId && (action === bridgeAction || action === 'changeLine')) ||
+                    (id === 'LoadVideoNet' && /^(?:load|reload|lianmaireload)Video$/.test(action))) finish('native-change');
+                return Reflect.apply(native, this, arguments);
+            };
+            player.handleAcj = wrapper;
+            return true;
+        }
+        function readState() {
+            const root = document.getElementById(DOUYU.ids.player)?._reactRootContainer?._internalRoot?.current;
+            const queue = root ? [root] : [];
+            for (let scanned = 0; queue.length && scanned < 1500; scanned++) {
+                const fiber = queue.pop();
+                if (fiber.sibling) queue.push(fiber.sibling);
+                if (fiber.child) queue.push(fiber.child);
+                const state = DOUYU.runtime.playerStore(fiber.stateNode);
+                const rates = typeof state?.getIn === 'function' && state.getIn(['app', 'multirates']);
+                if (typeof rates?.toJS !== 'function') continue;
+                const get = (...path) => state.getIn(path);
+                return {rate:get('app','rate'), rates:rates.toJS(), rid:get('app','rid'),
+                    ready:get('app','isAllReady'), manual:get('app','manualLoadVideo'),
+                    login:get('app','isLogin'), autoplay:get('app','canAutoPlay'), vod:get('app','inVod'),
+                    playing:get('videoModule','player','isPlay'), rtc:get('videoModule','player','isRtc')};
+            }
+            return null;
+        }
+        function tick() {
+            timer = null;
+            if (phase !== 'waiting') return;
+            try {
+                if (location.pathname !== path) return finish('navigation');
+                if (performance.now() > deadline) return finish('timeout');
+                if (read().some((value, i) => value !== initial[i])) return finish('preference-changed');
+                const state = attachBridge() ? readState() : null;
+                if (state) {
+                    last = {rate:state.rate, ready:state.ready, manual:state.manual};
+                    if (state.manual === true) return finish('manual-choice');
+                    if (state.rate === 0) return finish('already-original');
+                    // Unknown flags are not treated as safe: every gate must be explicit.
+                    if (state.ready === true && state.playing === true && state.autoplay === true &&
+                        state.login === true && state.manual === false && state.vod === false && state.rtc === false &&
+                        typeof state.rate === 'number' && String(state.rid) === String(window.$ROOM?.room_id)) {
+                        const target = Array.isArray(state.rates) && state.rates.find(item => item.rate === 0);
+                        if (!target || Number(target.diamondFan) === 1) return finish('original-unavailable');
+                        const native = original, player = owner;
+                        issued = true; finish('issued');
+                        // manual:true marks the switch so the site's 5 s restore does not repeat it.
+                        Reflect.apply(native, player, [bridgeId, bridgeAction, [{rate:0, manual:true}]]);
+                        return;
+                    }
+                }
+            } catch { return finish(issued ? 'native-error' : 'unavailable'); }
+            timer = setTimeout(tick, 100);
+        }
+        // createCleanController() writes the original-quality defaults first, so
+        // this reads either that default or a choice the viewer made since.
+        initial = read();
+        if (!savedOriginal(initial[0])) finish('no-original-preference');
+        else {
+            for (const type of userEvents) document.addEventListener(type, onUser, true);
+            timer = setTimeout(tick, 0);
+        }
+        return {status:() => ({phase, issued, last:last && {...last}}), stop:() => finish('stopped')};
+    }
+
+    const analytics = installAnalyticsSinks();
     const optionalResources = createOptionalResourceGate();
     const startupQuality = installStartupQuality();
     let clean;
     try { clean = createCleanController(); } catch {}
-    const version = '3.6.1';
+    let quality;
+    try { quality = createQualityRecovery(); } catch {}
+    const version = '3.7.0';
     const startedAt = Date.now();
     const preload = createPreloadGuard(optionalResources);
     let active = true;
@@ -1002,14 +1173,16 @@
         if (exiting) release('player', () => clean?.disposePlayer());
         release('resources', () => optionalResources.stop());
         release('startup', () => startupQuality.stop());
+        release('quality', () => quality?.stop());
         release('clean', () => clean?.stop({exiting}));
         preload.stop(release);
         release('navigation', () => navigation.stop());
     }
     const lifecycle = installPageLifecycle(() => stopGuard(true));
     const diagnostics = createDiagnostics(() => ({version, ...preload.status(), active, startedAt,
-        readyStateAtInstall, lifecycle:lifecycle.status(), cleanupErrors:[...cleanupErrors],
-        optionalResources:optionalResources.status(), startupQuality:startupQuality.status(), clean:clean?.status()}));
+        readyStateAtInstall, installedAtMs, lifecycle:lifecycle.status(), cleanupErrors:[...cleanupErrors],
+        optionalResources:optionalResources.status(), startupQuality:startupQuality.status(),
+        qualityRecovery:quality?.status(), analyticsSinks:analytics.installed, clean:clean?.status()}));
     Object.defineProperty(window, '__douyuSafariGuard', {
         configurable: true,
         value: Object.freeze({
@@ -1021,5 +1194,4 @@
             },
         }),
     });
-    const readyStateAtInstall = document.readyState;
 })();
