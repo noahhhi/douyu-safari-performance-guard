@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.7.0 — 未发布
+
+- 代码按站点契约重组：`DOUYU` 配置区集中选择器、接口、存储键和分组阻断规则，新增 `adapterHealth` 诊断与 `docs/maintenance.md`，斗鱼更新后可按配置快速适配。
+- 新增阻断：房间独立挂件（广告位 sign、顶部悬浮、投票互动、抽奖、超级粉丝）、仅主播/超管使用的 menu/superMenu、百度/Google/火山统计 SDK。统计 SDK 先放置无增长替身；`collect-rangers` 仅在替身先就位时阻断，晚注入时保留真实 SDK。
+- Safari Tampermonkey 晚注入时错过首流改写，播放器就绪后调用一次原生换流恢复原画；遇到用户操作、偏好变化或原生换流即让步。
+- 播放器模块发现改为启动后 20 秒内持续进行；DOM 插入挂钩跳过无关节点，减少每条弹幕的固定开销。
+- 冻结炫彩弹幕的背景动画（保留渐变与移动）。
+- localStorage 分类开关：`douyu-safari-disabled-categories` 临时关闭分类，`douyu-safari-enabled-categories` 启用默认关闭的实验分类（`pageChrome`：页头、关注分组、底部素材列表），用于排查与 A/B。
+- 验证见 [v3.7.0 验证说明](docs/validation-3.7.md)。
+
 ## 3.6.1 — 2026-09-21
 
 - 修复离开直播间时没有主动销毁原生播放器的问题；释放媒体源、发送服务、观察器与脚本监听。

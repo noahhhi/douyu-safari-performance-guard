@@ -94,6 +94,12 @@
             anchorTools: {enabled:true, rules:[
                 {host:/(?:^|\.)douyucdn\.cn$/, pkg:'live-next-master', fileRegex:/^(?:menu|superMenu)_/},
             ]},
+            // 实验分类（默认关闭，需 localStorage 显式启用并回归后再改为默认）：
+            // header-master 1.39 MB 页头（含一份独立登录实现，common 另有 LoginService）、
+            // customGroup 关注分组面板、live-video-assets 底部素材列表。见 docs/maintenance.md。
+            pageChrome: {enabled:false, experimental:true, packages:['header-master', 'live-video-assets-master'], rules:[
+                {host:/(?:^|\.)douyucdn\.cn$/, pkg:'live-next-master', fileRegex:/^customGroup_/},
+            ]},
             // 统计 SDK：配合 installAnalyticsSinks()；页面 inline 只在全局不存在时创建队列。
             analytics: {enabled:true, rules:[
                 {host:'hm.baidu.com', pathnameRegex:/^\/hm\.js$/},
@@ -203,6 +209,8 @@
             // 本脚本拥有：逗号分隔的分类名，临时关闭这些阻断分类，用于斗鱼更新后二分排查或 A/B 测量，
             // 例如 localStorage['douyu-safari-disabled-categories'] = 'roomWidgets,analytics'。
             disabledCategories: 'douyu-safari-disabled-categories',
+            // 同格式：启用代码中默认关闭的实验分类，例如 'pageChrome'。关闭列表优先。
+            enabledCategories: 'douyu-safari-enabled-categories',
             shield: 'chat-shield-config', // Storage：改一次原生屏蔽设置并对照 JSON envelope。
             preload: 'h5StreamPreload_h5p_room', // Storage/首流加载代码：自动档流缓存。
             // Storage：用户在清晰度菜单选择后写入的三个偏好（h5-plugin onChangeHandler）。
@@ -265,6 +273,7 @@
             #player_h5_adDom,.PIPAdLayer,[data-dy-clean-core] [class^="bg__"],
             [data-dy-clean-core] [class^="broadcastDiv-"],[data-dy-clean-core] [class^="customBc-"],
             [data-dy-clean-core] [class^="aiHighlightEntry-"] { display:none!important; }
+            [data-dy-clean-core] .barrage-gradient.is-animation { animation:none!important;background-position:100% 50%!important; }
             [data-dy-clean-core] [class^="fullScreenSendor-"] { display:flex!important;align-items:center!important;width:clamp(160px,24vw,340px)!important;min-width:0!important;margin-left:12px!important; }
             [data-dy-clean-core] [class^="fullScreenSendor-"] input { flex:1!important;width:0!important;min-width:0!important; }
             [data-dy-clean-core] [class^="fullScreenSendor-"] button { flex:none!important; }
@@ -383,11 +392,14 @@
 
     // Category switch — 代码里的 enabled 与本地临时关闭列表合并；读不到存储时按代码默认。
     function categoryEnabled(name) {
-        if (!DOUYU.resourceCategories[name]?.enabled) return false;
-        try {
-            const off = localStorage.getItem(DOUYU.storageKeys.disabledCategories);
-            return !off || !off.split(',').map(item => item.trim()).includes(name);
-        } catch { return true; }
+        const config = DOUYU.resourceCategories[name];
+        if (!config) return false;
+        const listed = key => {
+            try { return (localStorage.getItem(key) || '').split(',').map(item => item.trim()).includes(name); }
+            catch { return false; }
+        };
+        if (listed(DOUYU.storageKeys.disabledCategories)) return false;
+        return !!config.enabled || listed(DOUYU.storageKeys.enabledCategories);
     }
 
     // Resource gate — 加载前拦截独立业务；依赖 resourceCategories/rules/iframes/asideChunks。

@@ -56,4 +56,19 @@ assert.equal(blocked(gate, 'https://hm.baidu.com/hm.js'), false);
 assert.equal(blocked(gate, room+'menu_1.js'), true);
 assert.equal(blocked(gate, 'https://shark2.douyucdn.cn/front-publish/live-task-master/a.js'), true);
 assert.equal(ab.installAnalyticsSinks().installed.length, 0);
+// Experimental pageChrome: off by default, opt-in via the enabled list, and the disabled list wins.
+const chrome = ['https://shark2.douyucdn.cn/front-publish/header-master/js/header_d00953c.js',
+    'https://shark2.douyucdn.cn/front-publish/live-video-assets-master/js/live-video-assets_e614fbe.js', room+'customGroup_465cdfc.js'];
+gate = createOptionalResourceGate();
+for (const url of chrome) assert.equal(blocked(gate, url), false, 'experimental off by default: '+url);
+function withLists(on, off) {
+    return load({URL, window:{}, location:{href:'https://www.douyu.com/93589'}, queueMicrotask:fn=>fn(), Event:class{},
+        localStorage:{getItem:k=>({'douyu-safari-enabled-categories':on,'douyu-safari-disabled-categories':off})[k] ?? null}});
+}
+gate = withLists('pageChrome', null).createOptionalResourceGate();
+for (const url of chrome) assert.equal(blocked(gate, url), true, url);
+assert.equal(blocked(gate, room+'customGroupX_1.js'), false);
+assert.equal(blocked(gate, 'https://shark2.douyucdn.cn/front-publish/live-video-module-master/js/live-video-module_ebde0cb.js'), false);
+assert.equal(blocked(withLists('pageChrome', 'pageChrome').createOptionalResourceGate(), chrome[0]), false);
+assert.equal(blocked(withLists('noSuchCategory', null).createOptionalResourceGate(), chrome[0]), false);
 console.log('v3.7 room widget, anchor tool and analytics rules: passed');

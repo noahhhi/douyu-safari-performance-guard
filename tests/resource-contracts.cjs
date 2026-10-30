@@ -24,13 +24,13 @@ const legacyPackages = [
     'live-account-transactions-master', 'live-anchor-interactive-tool-master',
 ];
 const legacyAside = 'NobleReminder|ChatRankAll|FansRankAll|DiamondsFansRankBottom|BarrageGroup|SvgaConfigEffectContainer|YBCommunity|DiamondsFansEffect|TbActPopup|ChatEffect|AnchorLevelUp|FollowTips|WishGiftMsg|PrivilegeGift|HighEnergyTips|FansFeedback|StarVoteTips|MatchSystemV2Card|ProgramBookletTips|PopularBarrage|MedalDialog|MedalPanel|MedalDroppingPanel|UserGuide|UpgradeEffect|GuideBarrage|HotBarrage|BarrageCounter|UserGameDataPanel'.split('|');
-assert.deepEqual(Object.values(DOUYU.resourceCategories).flatMap(c=>Array.from(c.packages||[])).sort(), legacyPackages.slice().sort());
+assert.deepEqual(Object.values(DOUYU.resourceCategories).filter(c=>!c.experimental).flatMap(c=>Array.from(c.packages||[])).sort(), legacyPackages.slice().sort());
 assert.deepEqual(Array.from(DOUYU.asideChunks), legacyAside);
 assert.equal(DOUYU.resourceRules.length,1);
 assert.equal(DOUYU.iframes.length,3);
 // v3.7.0 rule categories are covered in tests/v37-rules.cjs; nothing else may add rules.
 for (const [name, category] of Object.entries(DOUYU.resourceCategories)) {
-    if (!['roomWidgets','anchorTools','analytics'].includes(name)) assert.equal(category.rules?.length || 0,0,name);
+    if (!['roomWidgets','anchorTools','analytics','pageChrome'].includes(name)) assert.equal(category.rules?.length || 0,0,name);
 }
 function blocked(gate, url, kind='script') {
     const attr = kind === 'link' ? 'href' : 'src', attrs = {[attr]:url};

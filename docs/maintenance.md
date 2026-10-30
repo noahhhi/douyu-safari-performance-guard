@@ -90,7 +90,7 @@ analytics: {enabled:true, packages:[], rules:[
 localStorage.setItem('douyu-safari-disabled-categories', 'roomWidgets,analytics');
 ```
 
-再重新载入。分类名即 `DOUYU.resourceCategories` 的键（如 `activity`、`gifts`、`games`、`roomWidgets`、`anchorTools`、`analytics`）。斗鱼更新后若某功能失效，可逐个关闭分类定位；测量某分类的内存收益时，用全新标签页分别载入开启/关闭两种状态。排查完成后执行 `localStorage.removeItem('douyu-safari-disabled-categories')`。
+再重新载入。启用默认关闭的实验分类用 `douyu-safari-enabled-categories`（例如 `pageChrome`），两个列表同时包含时以关闭为准。分类名即 `DOUYU.resourceCategories` 的键（如 `activity`、`gifts`、`games`、`roomWidgets`、`anchorTools`、`analytics`）。斗鱼更新后若某功能失效，可逐个关闭分类定位；测量某分类的内存收益时，用全新标签页分别载入开启/关闭两种状态。排查完成后执行 `localStorage.removeItem('douyu-safari-disabled-categories')`。
 
 关闭 `analytics` 时也不会安装统计替身。`collect-rangers` 规则另有 `when` 条件：只有本脚本的 `collectEvent` 回调替身先于页面 inline 代码就位才会阻断，晚注入时保留真实 SDK。
 
