@@ -6,7 +6,7 @@ const config = source.slice(source.indexOf('    const DOUYU = {'), source.indexO
 const functions = source.slice(source.indexOf('    function installRoomNavigationBoundary()'), source.indexOf('    const analytics = installAnalyticsSinks();'));
 const names = ['installRoomNavigationBoundary', 'installPageLifecycle', 'createOptionalResourceGate',
     'createPlayerModuleTrim', 'createAdapterHealth', 'createDiagnostics', 'createCleanController',
-    'installStartupQuality', 'createPreloadGuard', 'installAnalyticsSinks', 'createQualityRecovery'];
+    'installStartupQuality', 'createPreloadGuard', 'installAnalyticsSinks', 'createQualityRecovery', 'categoryEnabled'];
 function load(context = {}) {
     vm.createContext(context);
     vm.runInContext(config + functions + '\nObject.assign(globalThis, {DOUYU, DISCOVERY_WINDOW_MS, ' + names.join(',') + '});', context);

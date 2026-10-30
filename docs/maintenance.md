@@ -82,6 +82,22 @@ analytics: {enabled:true, packages:[], rules:[
 
 **资源 gate 只处理 DOM script/link/iframe 插入，不拦截通用 fetch、XHR 或 sendBeacon。** 因此把采集 URL 放进规则不会自动阻止 beacon/XHR 上报；需要单独评估机制，不能声称配置已经覆盖所有 analytics。
 
+## 临时关闭分类（二分排查与 A/B）
+
+不改代码即可关闭部分阻断分类：在斗鱼页面控制台执行
+
+```js
+localStorage.setItem('douyu-safari-disabled-categories', 'roomWidgets,analytics');
+```
+
+再重新载入。分类名即 `DOUYU.resourceCategories` 的键（如 `activity`、`gifts`、`games`、`roomWidgets`、`anchorTools`、`analytics`）。斗鱼更新后若某功能失效，可逐个关闭分类定位；测量某分类的内存收益时，用全新标签页分别载入开启/关闭两种状态。排查完成后执行 `localStorage.removeItem('douyu-safari-disabled-categories')`。
+
+关闭 `analytics` 时也不会安装统计替身。`collect-rangers` 规则另有 `when` 条件：只有本脚本的 `collectEvent` 回调替身先于页面 inline 代码就位才会阻断，晚注入时保留真实 SDK。
+
+## 注入时机与画质补救
+
+Safari 版 Tampermonkey 不保证 `document-start` 先于页面脚本。`status().readyStateAtInstall` / `installedAtMs` 记录实际注入时刻，`startupQuality.request` 为空或 `fromRate` 不是 `-1` 时说明首流已错过改写。此时 `createQualityRecovery()` 在播放器 store 就绪后调用一次原生 `handleAcj('loadWithoutPerception','changeRate',[{rate:0, manual:true}])`；`status().qualityRecovery.phase` 说明结果（`issued`、`already-original`、`native-change`、`user-input`、`timeout` 等）。斗鱼改版后若长期为 `timeout` 且 `last` 为空，先检查 `runtime.playerStore` 与 h5-plugin 的 `mapStateToProps` 字段。
+
 ## 其他契约的维护边界
 
 - `storageDefaults`、`storageKeys`、`storageEnvelope`：在原生 UI 更改一次设置，再对照 Storage 中的 key、枚举及 c/e/v/r 封装。`shieldKeys` 是事件参数，`shieldStorageKeys` / `shieldPersistence` 是存储参数，注意 `smallGift` 与 `smallgift` 的区别。
@@ -103,7 +119,8 @@ analytics: {enabled:true, packages:[], rules:[
 7. `createCleanController`：原生设置、React 根清理、发送服务、布局和 tick。
 8. `installStartupQuality`：首次自动档请求与首次视频元数据。
 9. `createPreloadGuard`：DOM 插入快路径、FLV preload 与原有 head fallback。
-10. 文件末尾：模块装配、停止顺序、公开 `window.__douyuSafariGuard`。
+10. `categoryEnabled` / `installAnalyticsSinks` / `createQualityRecovery`：分类临时开关、统计替身、晚注入画质补救。
+11. 文件末尾：模块装配、停止顺序、公开 `window.__douyuSafariGuard`。
 
 ## 运行回归
 

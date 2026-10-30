@@ -200,6 +200,9 @@
         },
         storageKeys: {
             cleanMode: 'douyu-safari-clean-mode', // 本脚本拥有；on/off 与历史版本兼容。
+            // 本脚本拥有：逗号分隔的分类名，临时关闭这些阻断分类，用于斗鱼更新后二分排查或 A/B 测量，
+            // 例如 localStorage['douyu-safari-disabled-categories'] = 'roomWidgets,analytics'。
+            disabledCategories: 'douyu-safari-disabled-categories',
             shield: 'chat-shield-config', // Storage：改一次原生屏蔽设置并对照 JSON envelope。
             preload: 'h5StreamPreload_h5p_room', // Storage/首流加载代码：自动档流缓存。
             // Storage：用户在清晰度菜单选择后写入的三个偏好（h5-plugin onChangeHandler）。
@@ -378,6 +381,15 @@
         }};
     }
 
+    // Category switch — 代码里的 enabled 与本地临时关闭列表合并；读不到存储时按代码默认。
+    function categoryEnabled(name) {
+        if (!DOUYU.resourceCategories[name]?.enabled) return false;
+        try {
+            const off = localStorage.getItem(DOUYU.storageKeys.disabledCategories);
+            return !off || !off.split(',').map(item => item.trim()).includes(name);
+        } catch { return true; }
+    }
+
     // Resource gate — 加载前拦截独立业务；依赖 resourceCategories/rules/iframes/asideChunks。
     function createOptionalResourceGate() {
         let enabled = true;
@@ -390,7 +402,7 @@
         // touching the gate. Category flags are read when the factory is created.
         const rules = [], packages = new Set();
         for (const [category, config] of Object.entries(DOUYU.resourceCategories)) {
-            if (!config.enabled) continue;
+            if (!categoryEnabled(category)) continue;
             for (const pkg of config.packages || []) packages.add(pkg);
             for (const rule of config.rules || []) rules.push(rule);
             if (category === 'aside' && DOUYU.asideChunks.length) {
@@ -400,7 +412,7 @@
             }
         }
         for (const rule of [...DOUYU.resourceRules, ...DOUYU.iframes]) {
-            if (DOUYU.resourceCategories[rule.category]?.enabled) rules.push(rule);
+            if (categoryEnabled(rule.category)) rules.push(rule);
         }
         function matches(pattern, value) {
             if (typeof pattern === 'string') return pattern === value;
@@ -1020,7 +1032,7 @@
     // 晚注入时不替换已有对象，collect-rangers 规则也随之失效，真实 SDK 照常加载。
     function installAnalyticsSinks() {
         const installed = [];
-        let enabled = DOUYU.resourceCategories.analytics.enabled;
+        let enabled = categoryEnabled('analytics');
         try { enabled = enabled && localStorage.getItem(DOUYU.storageKeys.cleanMode) !== 'off'; } catch {}
         if (!enabled) return {installed};
         const sink = () => {

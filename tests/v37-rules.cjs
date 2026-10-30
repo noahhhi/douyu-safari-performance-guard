@@ -47,4 +47,13 @@ const off = load({URL, window:{}, location:{href:'https://www.douyu.com/93589'},
     localStorage:{getItem:k=>k==="douyu-safari-clean-mode"?"off":null}, queueMicrotask:fn=>fn(), Event:class{}});
 assert.equal(off.installAnalyticsSinks().installed.length, 0);
 assert.equal(blocked(off.createOptionalResourceGate(), room+'sign_1.js'), false);
+// Runtime category switch (maintenance bisect / A-B): listed categories are off, others keep code defaults.
+const ab = load({URL, window:{}, location:{href:'https://www.douyu.com/93589'}, queueMicrotask:fn=>fn(), Event:class{},
+    localStorage:{getItem:k=>k==='douyu-safari-disabled-categories'?' roomWidgets , analytics':null}});
+gate = ab.createOptionalResourceGate();
+assert.equal(blocked(gate, room+'sign_1.js'), false);
+assert.equal(blocked(gate, 'https://hm.baidu.com/hm.js'), false);
+assert.equal(blocked(gate, room+'menu_1.js'), true);
+assert.equal(blocked(gate, 'https://shark2.douyucdn.cn/front-publish/live-task-master/a.js'), true);
+assert.equal(ab.installAnalyticsSinks().installed.length, 0);
 console.log('v3.7 room widget, anchor tool and analytics rules: passed');
