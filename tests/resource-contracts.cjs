@@ -30,7 +30,7 @@ assert.equal(DOUYU.resourceRules.length,1);
 assert.equal(DOUYU.iframes.length,3);
 // v3.7.0 rule categories are covered in tests/v37-rules.cjs; nothing else may add rules.
 for (const [name, category] of Object.entries(DOUYU.resourceCategories)) {
-    if (!['roomWidgets','anchorTools','analytics','pageChrome'].includes(name)) assert.equal(category.rules?.length || 0,0,name);
+    if (!['roomWidgets','anchorTools','analytics','followGroups'].includes(name)) assert.equal(category.rules?.length || 0,0,name);
 }
 function blocked(gate, url, kind='script') {
     const attr = kind === 'link' ? 'href' : 'src', attrs = {[attr]:url};

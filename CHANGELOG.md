@@ -7,7 +7,8 @@
 - Safari Tampermonkey 晚注入时错过首流改写，播放器就绪后调用一次原生换流恢复原画；遇到用户操作、偏好变化或原生换流即让步。
 - 播放器模块发现改为启动后 20 秒内持续进行；DOM 插入挂钩跳过无关节点，减少每条弹幕的固定开销。
 - 冻结炫彩弹幕的背景动画（保留渐变与移动）。
-- localStorage 分类开关：`douyu-safari-disabled-categories` 临时关闭分类，`douyu-safari-enabled-categories` 启用默认关闭的实验分类（`pageChrome`：页头、关注分组、底部素材列表），用于排查与 A/B。
+- localStorage 分类开关：`douyu-safari-disabled-categories` 临时关闭分类，`douyu-safari-enabled-categories` 启用默认关闭的实验分类（`pageHeader` 页头、`followGroups` 关注分组、`videoAssets` 底部视频合集，可单独开启），用于排查与 A/B。
+- Chromium（Chrome / Edge + Tampermonkey MV3）放行执行：FLV preload 中和仅在 Safari 生效，其余机制共用；诊断新增 `browser` 与 `livePreloadGuardEnabled`。Chromium 尚待真实浏览器回归。
 - 验证见 [v3.7.0 验证说明](docs/validation-3.7.md)。
 
 ## 3.6.1 — 2026-09-21

@@ -53,3 +53,22 @@ const errors=[];guard.stop((stage,fn)=>{try{fn();}catch{errors.push(stage);}});
 assert.deepEqual(errors,[]);assert.equal(Node.prototype.appendChild,original);
 assert.equal(disconnected,1);assert.equal(listeners.size,0);assert.equal(guard.status().active,false);
 console.log('DOM insertion fast paths, fragment resources, preload accounting and hook restoration: passed');
+{
+    let resources = 0;
+    const chromium = load({URL, Node, Element,
+        navigator:{userAgent:'Mozilla/5.0 AppleWebKit/537.36 Chrome/142.0.0.0 Safari/537.36'},
+        document:{baseURI:'https://www.douyu.com/93589', head:{querySelectorAll:()=>[]},
+            addEventListener(){}, removeEventListener(){}},
+        MutationObserver:class {observe(){} disconnect(){}}});
+    const guard = chromium.createPreloadGuard({prepare(){resources++;}});
+    const link = resource('link',{href:'https://media.invalid/live.flv',as:'fetch',rel:'preload'});
+    host.appendChild(link);
+    host.appendChild(resource('script',{src:'https://fixture.invalid/optional.js'}));
+    assert.equal(link.attributes.rel,'preload','Chromium keeps native live-stream preload');
+    assert.equal(guard.status().livePreloadGuardEnabled,false);
+    assert.equal(guard.status().blockedLivePreloads,0);
+    assert.equal(resources,2,'shared DOM interception must still feed the resource gate');
+    guard.stop((stage,fn)=>fn());
+    assert.equal(Node.prototype.appendChild,original);
+}
+console.log('Chromium preserves FLV preload while retaining optional-resource interception: passed');

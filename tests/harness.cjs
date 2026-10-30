@@ -8,8 +8,9 @@ const names = ['installRoomNavigationBoundary', 'installPageLifecycle', 'createO
     'createPlayerModuleTrim', 'createAdapterHealth', 'createDiagnostics', 'createCleanController',
     'installStartupQuality', 'createPreloadGuard', 'installAnalyticsSinks', 'createQualityRecovery', 'categoryEnabled'];
 function load(context = {}) {
+    context.navigator ??= {userAgent:'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Version/26.0 Safari/605.1.15'};
     vm.createContext(context);
-    vm.runInContext(config + functions + '\nObject.assign(globalThis, {DOUYU, DISCOVERY_WINDOW_MS, ' + names.join(',') + '});', context);
+    vm.runInContext(config + functions + '\nObject.assign(globalThis, {DOUYU, BROWSER, DISCOVERY_WINDOW_MS, ' + names.join(',') + '});', context);
     return context;
 }
 module.exports = {source, config, load};

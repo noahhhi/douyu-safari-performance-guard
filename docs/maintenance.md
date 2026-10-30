@@ -90,13 +90,22 @@ analytics: {enabled:true, packages:[], rules:[
 localStorage.setItem('douyu-safari-disabled-categories', 'roomWidgets,analytics');
 ```
 
-再重新载入。启用默认关闭的实验分类用 `douyu-safari-enabled-categories`（例如 `pageChrome`），两个列表同时包含时以关闭为准。分类名即 `DOUYU.resourceCategories` 的键（如 `activity`、`gifts`、`games`、`roomWidgets`、`anchorTools`、`analytics`）。斗鱼更新后若某功能失效，可逐个关闭分类定位；测量某分类的内存收益时，用全新标签页分别载入开启/关闭两种状态。排查完成后执行 `localStorage.removeItem('douyu-safari-disabled-categories')`。
+再重新载入。启用默认关闭的实验分类用 `douyu-safari-enabled-categories`（例如 `videoAssets,followGroups`），两个列表同时包含时以关闭为准。分类名即 `DOUYU.resourceCategories` 的键（如 `activity`、`gifts`、`games`、`roomWidgets`、`anchorTools`、`analytics`）。斗鱼更新后若某功能失效，可逐个关闭分类定位；测量某分类的内存收益时，用全新标签页分别载入开启/关闭两种状态。排查完成后执行 `localStorage.removeItem('douyu-safari-disabled-categories')`。
 
 关闭 `analytics` 时也不会安装统计替身。`collect-rangers` 规则另有 `when` 条件：只有本脚本的 `collectEvent` 回调替身先于页面 inline 代码就位才会阻断，晚注入时保留真实 SDK。
 
+### 实验分类的风险
+
+静态审查（2026-10-31）结论，开启前按此回归：
+
+- `videoAssets`（live-video-assets）：只向 `BottomApp` 的 `videoAsset` 区域推送底部视频合集，未见包外消费者。风险低。
+- `followGroups`（live-next `customGroup_`）：普通关注接口不受影响，但 Next 标题栏在关注成功后会请求分组提示、发送 `cutomGroup_showGroupSetting` 并监听特别关注状态，这些后续操作随之失效。共享 `Modal_` chunk 不在阻断范围内。
+- `pageHeader`（header-master）：独占 `shark.header.BaseConfigService`（私信、用户等级/至尊权益/公共面板），阻断后房间公共包和聊天栏对这些服务的调用会静默挂起；页头的关注列表、历史、搜索和退出入口一并消失。登录检查与弹幕发送走 room common 和聊天栏各自的 LoginService，不依赖页头，但服务端会话失效后的恢复未实测。
+- SHARK loader 在 `error` 时推进队列，阻断不会卡住主队列；被阻断包注册的服务没有提供者，调用方会一直等待而不报错。
+
 ## 注入时机与画质补救
 
-Safari 版 Tampermonkey 不保证 `document-start` 先于页面脚本。`status().readyStateAtInstall` / `installedAtMs` 记录实际注入时刻，`startupQuality.request` 为空或 `fromRate` 不是 `-1` 时说明首流已错过改写。此时 `createQualityRecovery()` 在播放器 store 就绪后调用一次原生 `handleAcj('loadWithoutPerception','changeRate',[{rate:0, manual:true}])`；`status().qualityRecovery.phase` 说明结果（`issued`、`already-original`、`native-change`、`user-input`、`timeout` 等）。斗鱼改版后若长期为 `timeout` 且 `last` 为空，先检查 `runtime.playerStore` 与 h5-plugin 的 `mapStateToProps` 字段。
+Safari 版 Tampermonkey 不保证 `document-start` 先于页面脚本；Chromium 版只有 **UserScripts API Dynamic** 注入模式能保证。`status().readyStateAtInstall` / `installedAtMs` 记录实际注入时刻，`startupQuality.request` 为空或 `fromRate` 不是 `-1` 时说明首流已错过改写。此时 `createQualityRecovery()` 在播放器 store 就绪后调用一次原生 `handleAcj('loadWithoutPerception','changeRate',[{rate:0, manual:true}])`；`status().qualityRecovery.phase` 说明结果（`issued`、`already-original`、`native-change`、`user-input`、`timeout` 等）。斗鱼改版后若长期为 `timeout` 且 `last` 为空，先检查 `runtime.playerStore` 与 h5-plugin 的 `mapStateToProps` 字段。
 
 ## 其他契约的维护边界
 

@@ -2,7 +2,7 @@
 // @name         Douyu Safari Performance Guard
 // @namespace    local.codex.douyu
 // @version      3.7.0
-// @description  Lean native Douyu player: retain video, danmaku and controls; unload auxiliary modules; default highest quality, all effects off and 1/4-screen danmaku; prevent FLV preload buffering.
+// @description  Lean native Douyu player for Safari and Chromium: retain video, danmaku and controls; unload auxiliary modules; default highest quality, effects off and 1/4-screen danmaku; guard Safari FLV preloads.
 // @author       noahhhi
 // @license      MIT
 // @homepageURL  https://github.com/noahhhi/douyu-safari-performance-guard
@@ -19,7 +19,7 @@
 
 (() => {
     'use strict';
-    // Injection timing: Safari Tampermonkey does not guarantee document-start.
+    // Injection timing: Safari and non-dynamic Chromium TM modes may inject late.
     const readyStateAtInstall = document.readyState, installedAtMs = Math.round(performance.now());
 
     // DOUYU ADAPTER CONTRACTS — 网站更新时先维护此区；算法与浏览器挂钩在下面。
@@ -94,12 +94,16 @@
             anchorTools: {enabled:true, rules:[
                 {host:/(?:^|\.)douyucdn\.cn$/, pkg:'live-next-master', fileRegex:/^(?:menu|superMenu)_/},
             ]},
-            // 实验分类（默认关闭，需 localStorage 显式启用并回归后再改为默认）：
-            // header-master 1.39 MB 页头（含一份独立登录实现，common 另有 LoginService）、
-            // customGroup 关注分组面板、live-video-assets 底部素材列表。见 docs/maintenance.md。
-            pageChrome: {enabled:false, experimental:true, packages:['header-master', 'live-video-assets-master'], rules:[
+            // 实验分类（默认关闭，需 localStorage 显式启用并回归后再改为默认）。风险依次递减，见 docs/maintenance.md。
+            // pageHeader：header-master 1.39 MB 页头；独占 shark.header.BaseConfigService（私信、至尊/公共面板），
+            // 登录另有 room common LoginService。
+            pageHeader: {enabled:false, experimental:true, packages:['header-master']},
+            // followGroups：关注后的分组设置与特别关注（Next 标题栏关注成功后会调用）。
+            followGroups: {enabled:false, experimental:true, rules:[
                 {host:/(?:^|\.)douyucdn\.cn$/, pkg:'live-next-master', fileRegex:/^customGroup_/},
             ]},
+            // videoAssets：底部视频合集（BottomApp videoAsset 区域），未见包外消费者。
+            videoAssets: {enabled:false, experimental:true, packages:['live-video-assets-master']},
             // 统计 SDK：配合 installAnalyticsSinks()；页面 inline 只在全局不存在时创建队列。
             analytics: {enabled:true, rules:[
                 {host:'hm.baidu.com', pathnameRegex:/^\/hm\.js$/},
@@ -209,7 +213,7 @@
             // 本脚本拥有：逗号分隔的分类名，临时关闭这些阻断分类，用于斗鱼更新后二分排查或 A/B 测量，
             // 例如 localStorage['douyu-safari-disabled-categories'] = 'roomWidgets,analytics'。
             disabledCategories: 'douyu-safari-disabled-categories',
-            // 同格式：启用代码中默认关闭的实验分类，例如 'pageChrome'。关闭列表优先。
+            // 同格式：启用代码中默认关闭的实验分类，例如 'videoAssets,followGroups'。关闭列表优先。
             enabledCategories: 'douyu-safari-enabled-categories',
             shield: 'chat-shield-config', // Storage：改一次原生屏蔽设置并对照 JSON envelope。
             preload: 'h5StreamPreload_h5p_room', // Storage/首流加载代码：自动档流缓存。
@@ -281,10 +285,17 @@
             #js-player-controlbar:focus-within [class*="ControlBar-"] { opacity:1!important;visibility:visible!important;display:flex!important; }
         `, // Elements/Styles：所有站点类名前缀和布局关系集中在这里；data-dy-* 为本脚本标记。
     };
+    // Browser policy, not codec detection: Chromium also advertises AppleWebKit.
+    // Preserve the existing Safari predicate; let Douyu choose its media backend.
+    const BROWSER = (() => {
+        const ua = navigator.userAgent;
+        const isChromium = /Chrome|Chromium|Edg\//.test(ua);
+        const isSafari = /AppleWebKit/.test(ua) && /Safari/.test(ua) && !isChromium;
+        return Object.freeze({isSafari, isChromium, guardLivePreload:isSafari});
+    })();
     const DISCOVERY_WINDOW_MS = 20000; // 共用现有 tick，不新增定时器/大子树观察器。
 
-    if (window.top !== window.self || !/AppleWebKit/.test(navigator.userAgent) ||
-        !/Safari/.test(navigator.userAgent) || /Chrome|Chromium|Edg\//.test(navigator.userAgent)) return;
+    if (window.top !== window.self || !(BROWSER.isSafari || BROWSER.isChromium)) return;
     const navigation = installRoomNavigationBoundary();
     if (!DOUYU.roomPath.test(location.pathname)) return;
     if (window.__douyuSafariGuard) return;
@@ -308,6 +319,7 @@
         function reloadTo(url, replace = false, state = null, title = '') {
             // Retain the history URL, but commit the next room as a Reload.
             // WebKit excludes the departing document from BFCache for Reload.
+            // Chromium uses this boundary for fresh room setup, not a memory guarantee.
             // Other browser/extension references may still delay reclamation.
             routing = true;
             try {
@@ -948,6 +960,7 @@
         // Douyu's web-encrypt first-stream loader appends an anonymous fetch preload
         // for an endless .flv response. WebKit retains that preload's accumulated
         // resource data. The player's separate streaming fetch does not need it.
+        // Keep this workaround Safari-only; optional resource hooks serve both engines.
         function isLivePreload(node) {
             if (!node || node.nodeType !== 1 || node.localName !== 'link') return false;
             if (!/(?:^|\s)(?:preload|prefetch)(?:\s|$)/i.test(node.getAttribute('rel') || '')) return false;
@@ -959,7 +972,7 @@
         }
 
         function neutralize(node) {
-            if (!active || !isLivePreload(node)) return;
+            if (!active || !BROWSER.guardLivePreload || !isLivePreload(node)) return;
             // Keep the node and href for the site's bookkeeping; only suppress the
             // resource hint. Do this BEFORE insertion, not after download starts.
             if (!marked.has(node)) {
@@ -1027,7 +1040,7 @@
         watchHead();
         document.addEventListener('DOMContentLoaded', watchHead, {once: true});
         return {
-            status: () => ({active, blockedLivePreloads:blocked, latePreloads:late}),
+            status: () => ({active, livePreloadGuardEnabled:BROWSER.guardLivePreload, blockedLivePreloads:blocked, latePreloads:late}),
             deactivate: () => { active=false; }, // Stop interception before native/React teardown starts.
             stop(release) {
                 active=false;
@@ -1204,7 +1217,7 @@
     }
     const lifecycle = installPageLifecycle(() => stopGuard(true));
     const diagnostics = createDiagnostics(() => ({version, ...preload.status(), active, startedAt,
-        readyStateAtInstall, installedAtMs, lifecycle:lifecycle.status(), cleanupErrors:[...cleanupErrors],
+        readyStateAtInstall, installedAtMs, browser:{...BROWSER}, lifecycle:lifecycle.status(), cleanupErrors:[...cleanupErrors],
         optionalResources:optionalResources.status(), startupQuality:startupQuality.status(),
         qualityRecovery:quality?.status(), analyticsSinks:analytics.installed, clean:clean?.status()}));
     Object.defineProperty(window, '__douyuSafariGuard', {
