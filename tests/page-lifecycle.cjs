@@ -1,8 +1,6 @@
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const vm = require('node:vm');
-const source = fs.readFileSync('douyu-safari-performance-guard.user.js', 'utf8');
-const functions = source.slice(source.indexOf('    function installRoomNavigationBoundary()'), source.indexOf('    function createOptionalResourceGate()'));
+const {source, load} = require('./harness.cjs');
+const {DOUYU} = load();
 function harness(path='/93589') {
     const listeners = new Map(), log = [], originalCalls = [];
     const context = {URL, Object, Reflect, window:{}, history:{}, location:{pathname:path, origin:'https://www.douyu.com', href:'https://www.douyu.com'+path,
@@ -10,7 +8,7 @@ function harness(path='/93589') {
     context.window.addEventListener=(k,fn)=>{if(!listeners.has(k))listeners.set(k,new Set());listeners.get(k).add(fn);};
     context.window.removeEventListener=(k,fn)=>listeners.get(k)?.delete(fn);
     for(const method of ['pushState','replaceState']) context.history[method]=(...args)=>originalCalls.push([method,...args]);
-    vm.createContext(context); vm.runInContext(functions,context);
+    load(context);
     return {context,log,originalCalls,fire:(k,event={})=>{for(const fn of [...listeners.get(k)||[]])fn(event);}};
 }
 {
@@ -53,7 +51,7 @@ console.log('Navigation, background playback, one-time disposal and history rest
 {
     const start=source.indexOf('            disposePlayer: () => {')+'            disposePlayer: () => {'.length;
     const body=source.slice(start,source.indexOf('\n            },\n            stop: ({exiting',start));
-    const dispose=new Function('document', 'let failures=new Set(),disposedRoots=0,releasedMedia=0;'+body+';return {disposedRoots,releasedMedia,failures:[...failures]};');
+    const dispose=new Function('DOUYU', 'document', 'let failures=new Set(),disposedRoots=0,releasedMedia=0;'+body+';return {disposedRoots,releasedMedia,failures:[...failures]};').bind(null, DOUYU);
     let destroyed=0,paused=0,loaded=0,sourceRemoved=0;
     const media={srcObject:{},pause(){paused++;},removeAttribute(k){assert.equal(k,'src');sourceRemoved++;},querySelectorAll(){return [];},load(){loaded++;}};
     const player={dom:{id:'room-html5-player'},destroy(){destroyed++;}};

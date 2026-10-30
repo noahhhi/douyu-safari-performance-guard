@@ -5,7 +5,7 @@
   "description": "Safari userscript for lean Douyu live playback",
   "license": "MIT",
   "scripts": {
-    "test": "node --check douyu-safari-performance-guard.user.js && node tests/release-metadata.cjs && node tests/optional-resource-gate.cjs && node tests/page-lifecycle.cjs"
+    "test": "node --check douyu-safari-performance-guard.user.js && node tests/release-metadata.cjs && node tests/optional-resource-gate.cjs && node tests/page-lifecycle.cjs && node tests/resource-contracts.cjs && node tests/adapter-health.cjs && node tests/preload-guard.cjs && node tests/startup-quality.cjs"
   },
   "engines": {
     "node": ">=22"

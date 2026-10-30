@@ -1,8 +1,6 @@
 const assert=require('node:assert/strict');
-global.location={href:'https://www.douyu.com/93589'};global.localStorage={getItem:()=>null};
-const source=require('node:fs').readFileSync('douyu-safari-performance-guard.user.js','utf8');
-const fragment=source.slice(source.indexOf('    function createOptionalResourceGate()'),source.indexOf('    function createPlayerModuleTrim()'));
-const createOptionalResourceGate=new Function(fragment+';return createOptionalResourceGate')();
+const location={href:'https://www.douyu.com/93589'}, localStorage={getItem:()=>null};
+const {createOptionalResourceGate, DOUYU}=require('./harness.cjs').load({location,localStorage,URL,queueMicrotask,Event});
 
 function node(kind,url,connected=false){const attrs={[kind==='link'?'href':'src']:url};return {nodeType:1,localName:kind,isConnected:connected,getAttribute:k=>attrs[k],setAttribute:(k,v)=>{attrs[k]=v},removeAttribute:k=>{delete attrs[k]},dispatchEvent:()=>{},attrs};}
 const gate=createOptionalResourceGate();
