@@ -46,7 +46,7 @@ function run(mode, extra={}) {
     assert.equal(status.startupQuality.request, null);
     assert.equal(status.startupQuality.p2pCleared, 0);
     assert.equal(status.qualityRecovery, undefined);
-    assert.equal(status.livePreloadGuardEnabled, false);
+    assert.equal(status.livePreloadGuardEnabled, true, 'full mode also neutralises Safari live FLV preloads');
     assert.equal(status.analyticsSinks.length, 0);
     assert.equal(full.window._hmt, undefined);
     assert.equal(status.clean.enabled, false);
@@ -62,6 +62,12 @@ function run(mode, extra={}) {
     assert.equal(status.livePreloadGuardEnabled, true);
     clean.api.disable();
 }
+// Chromium keeps its native FLV preload in both modes.
+for (const mode of ['off', null]) {
+    const h = run(mode, {navigator:{userAgent:'Mozilla/5.0 AppleWebKit/537.36 Chrome/156.0.0.0 Safari/537.36'}});
+    assert.equal(h.api.status().livePreloadGuardEnabled, false);
+    h.api.disable();
+}
 // Directory entry: full mode follows native SPA routing; clean mode keeps the reload boundary.
 for (const mode of ['off', null]) {
     const h = run(mode, {location:{href:'https://www.douyu.com/directory', pathname:'/directory', origin:'https://www.douyu.com', reload(){}}});
@@ -73,8 +79,8 @@ for (const mode of ['off', null]) {
         assert.deepEqual(h.listeners, [], 'no navigation or lifecycle listeners');
         assert.deepEqual(h.writes, []);
         assert.notEqual(h.window.fetch, h.fetch, 'P2P hook covers later SPA room entry');
-        assert.notEqual(h.context.Node.prototype.appendChild, h.appendChild, 'ads-only DOM insertion hook installed');
-        assert.equal(h.api.status().livePreloadGuardEnabled, false);
+        assert.notEqual(h.context.Node.prototype.appendChild, h.appendChild, 'ads and Safari preload DOM insertion hook installed');
+        assert.equal(h.api.status().livePreloadGuardEnabled, true);
         const append = h.context.Node.prototype.appendChild, timerCount = h.timers.size;
         vm.runInNewContext(source, h.context);
         assert.equal(h.window.__douyuSafariGuard, h.api, 'SPA guard remains a single instance');

@@ -516,10 +516,17 @@
         const optional = new Set(moduleIds);
         const hooks = new Map(), seen = new Set(), errors = new Set();
         let enabled = true, stopped = false, visits = 0;
+        let pending = new Set(optional), lastRoot = null, lastPath = location.pathname;
         function visit() {
             const current = document.getElementById(DOUYU.ids.player)
                 ?._reactRootContainer?._internalRoot?.current;
+            if (current !== lastRoot?.deref() || location.pathname !== lastPath) {
+                lastRoot = current ? new WeakRef(current) : null; // Do not retain an old player tree after discovery closes.
+                lastPath = location.pathname;
+                pending = new Set(optional); // SPA rooms may use new connector prototypes, even with the same ids.
+            }
             if (!current) return false;
+            if (!pending.size) return hooks.size > 0; // All requested ids hooked for this path/root; skip the fiber walk.
             const queue = [current], updates = [];
             let scanned = 0;
             while (queue.length && scanned++ < 2500) {
@@ -542,6 +549,7 @@
                             proto.render = wrapped;
                             hooks.set(proto, {original, wrapped});
                         }
+                        pending.delete(props.id);
                         if (fiber.child) updates.push(instance);
                     }
                 }
@@ -572,9 +580,9 @@
             discover: () => !stopped && visit(),
             hookCount: () => hooks.size, // Cheap tick diagnostic; avoid materializing public status arrays.
             setEnabled: value => { enabled=!!value; refreshMounted(); },
-            status: () => ({enabled, hooks:hooks.size, modules:[...seen], visits, errors:[...errors]}),
+            status: () => ({enabled, hooks:hooks.size, modules:[...seen], visits, complete:!pending.size, errors:[...errors]}),
             stop: ({exiting=false}={}) => {
-                stopped=true; enabled=false;
+                stopped=true; enabled=false; lastRoot=null;
                 for (const [proto, {original, wrapped}] of hooks) {
                     try { if (proto.render === wrapped) proto.render=original; } catch { errors.add('restore-render'); }
                 }
@@ -1237,7 +1245,7 @@
         return {status:() => ({phase, issued, last:last && {...last}}), stop:() => finish('stopped')};
     }
 
-    // 完整模式只装广告相关部分与 P2P 清除；画质、导航和生命周期仍由原生处理。
+    // 完整模式去广告、清除 P2P，也中和 Safari 专用的无尽 FLV preload 提示；画质、导航和生命周期仍由原生处理。
     const cleanMode = isCleanMode();
     const analytics = installAnalyticsSinks();
     const optionalResources = createOptionalResourceGate();
@@ -1248,7 +1256,7 @@
     if (cleanMode) try { quality = createQualityRecovery(); } catch {}
     const version = '3.7.0';
     const startedAt = Date.now();
-    const preload = createPreloadGuard(optionalResources, cleanMode && BROWSER.guardLivePreload);
+    const preload = createPreloadGuard(optionalResources, BROWSER.guardLivePreload);
     let active = true;
     const cleanupErrors = new Set();
     function stopGuard(exiting = false) {

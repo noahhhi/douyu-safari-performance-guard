@@ -15,6 +15,7 @@
 - localStorage 分类开关：`douyu-safari-disabled-categories` 临时关闭分类，`douyu-safari-enabled-categories` 启用代码中关闭的分类，用于排查与 A/B。
 - 完整模式在非直播间页面也装上去广告层，并在路径变化后重新发现播放器模块；完整模式检查频率降为 1 秒/2 秒；诊断按模式区分适用项；含 `:has()`/`:is()` 的广告选择器拆为独立规则。
 - Chromium（Chrome / Edge + Tampermonkey MV3）放行执行：FLV preload 中和仅在 Safari 生效，其余机制共用；诊断新增 `browser` 与 `livePreloadGuardEnabled`。已在 Chrome 156 实测（见验证说明）。
+- 完整模式也中和 Safari 的无尽 FLV fetch preload 提示（Chromium 仍保留），不拦播放器流请求；播放器目标模块 id 全部挂钩后跳过重复 fiber 扫描，路径或播放器根改变后恢复发现，保留原有 20 秒窗口与累计诊断。
 - 验证见 [v3.7.0 验证说明](docs/validation-3.7.md)。
 
 ## 3.6.1 — 2026-09-21

@@ -89,6 +89,56 @@ function environment() {
     assert.equal(second.instance.render,second.original);
     assert.equal(clean.status().adapterHealth.stopped,true);
 }
+// Completion counts ids, not connector prototypes; new roots and paths reopen the fiber walk.
+{
+    const h=environment(), c=load(h.context), ids=[...c.DOUYU.adPlayerModules], groups=[];
+    let reads=0;
+    function modules(ids) {
+        class Connector {constructor(id){this.props={id};this.unsubscribeListener=()=>{};} render(){return 'native';} forceUpdate(){}}
+        const original=Connector.prototype.render, instances=ids.map(id=>new Connector(id));
+        const fibers=instances.map(instance=>({get memoizedProps(){reads++;return instance.props;},stateNode:instance}));
+        fibers.forEach((fiber,i)=>{fiber.sibling=fibers[i+1];});
+        const group={root:fibers[0],tail:fibers.at(-1),instances,original};
+        groups.push(group);return group;
+    }
+    const first=modules(ids.slice(0,-1)), last=modules(ids.slice(-1));
+    const root={current:first.root};
+    h.elements.set(c.DOUYU.ids.player,{_reactRootContainer:{_internalRoot:root}});
+    const trim=c.createPlayerModuleTrim(ids);
+    trim.discover();
+    assert.equal(trim.status().complete,false,'optional ids not yet found keep discovery open');
+    first.tail.sibling=last.root;
+    trim.discover();
+    assert.equal(trim.status().complete,true);
+    assert.equal(trim.hookCount(),2,'several ids may share a hooked prototype');
+    assert.equal(trim.status().modules.length,ids.length);
+    const completedReads=reads, completedVisits=trim.status().visits;
+    for (let i=0;i<3;i++) assert.equal(trim.discover(),true,'discovery success semantics stay intact');
+    assert.equal(reads,completedReads,'completed discovery never reads fiber props');
+    assert.equal(trim.status().visits,completedVisits,'visits counts actual scans only');
+    const next=modules(ids.slice(0,1));
+    root.current=next.root;
+    trim.discover();
+    assert.equal(next.instances[0].render(),null,'a new root can have a new prototype for an already seen id');
+    assert.equal(trim.status().complete,false,'completion requires all ids in the new root, not historical sightings');
+    assert.equal(trim.status().modules.length,ids.length,'public module sightings remain cumulative');
+    const rest=modules(ids.slice(1));
+    next.tail.sibling=rest.root;
+    trim.discover();
+    assert.equal(trim.status().complete,true);
+    const pathModules=modules(ids);
+    rest.tail.sibling=pathModules.root;
+    const beforePath=trim.status().visits;
+    c.location.pathname='/12345';
+    trim.discover();
+    assert.equal(trim.status().visits,beforePath+1,'pathname changes reopen scanning even when the root is reused');
+    for (const group of groups) for (const instance of group.instances) assert.equal(instance.render(),null);
+    trim.stop();
+    const stoppedVisits=trim.status().visits;
+    assert.equal(trim.discover(),false);
+    assert.equal(trim.status().visits,stoppedVisits);
+    for (const group of groups) for (const instance of group.instances) assert.equal(instance.render,group.original);
+}
 // Full-mode SPA entry after discovery expired must reopen discovery without extra timers.
 {
     const h=environment(), c=load(h.context);

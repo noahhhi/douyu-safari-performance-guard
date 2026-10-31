@@ -35,7 +35,7 @@ console.table(s?.adapterHealth?.contracts);
 
 - `optionalResources.late` 代表节点可能已开始加载，不能宣称已阻止；`count` / `paths` 仅记录加载前命中，路径计数仍有 128 项上限。
 - `startupQuality` 在两种模式均有值；`request` 的路径、`fromRate`、`sentRate` 用来核实简洁模式首流改写，完整模式的 `request` 始终为 `null`。简洁模式无记录时检查 `endpoints.firstStream`、POST form body 和 `storageKeys.preload`，不要改写后续用户主动切档。
-- `clean.playerModules.modules` 是实际见过的模块，`hooks` 是连接器原型数，二者不必相等。`visits` 在初始 20 秒内继续增长是预期行为，首次发现成功不再提前终止。
+- `clean.playerModules.modules` 是累计实际见过的模块，`hooks` 是连接器原型数，二者不必相等。`visits` 只计实际扫描；当前路径/播放器根已挂钩全部目标 id 时 `complete:true`，后续发现调用跳过 fiber 遍历。只找到部分 id 时仍在 20 秒窗口内继续扫描；简洁模式的可选模块未必全部出现，未完成不代表故障。
 - `clean.disposedRoots` / `releasedMedia` 与 `cleanupErrors` 用来验证离开页面时的释放；清理成功不等于 WebKit 已回收全部内存。
 
 ## 如何找新的 chunk 名
@@ -109,6 +109,10 @@ Safari 版 Tampermonkey 不保证 `document-start` 先于页面脚本；Chromium
 
 两种模式都通过 `installStreamParams({originalQuality:cleanMode})` 持续包装同源首流接口（`endpoints.firstStream`）的 POST 响应 `json()`：成功且 `data` 为非数组对象时，将 `data.p2p` / `data.h265_p2p` 同时置为数字 `0`（契约 `endpoints.p2pFields`），其余流参数不变。只清 `p2p` 会让播放器降为 H.264；两项一起清除保留原画与 H.265 能力、避免 P2P 上传，也会取消首流约 5 秒后的 preload 替换重启，避免加载约 10 秒后因 `dyp2pxp2p` SDK 被内容拦截器阻断、`P2PInitError` 销毁播放器而黑屏约 4 秒。后续手动切档、切线路和回退响应仍需清除 P2P；只有简洁模式移除 `storageKeys.preload` 缓存并将首个带档位的请求改写 `rate=0`，完整模式原样传递请求且不写入或移除 localStorage。hook 保留到 `stop()`，兼容诊断键 `startupQuality` 在两种模式都有值，完整模式的 `request` 始终为 `null`；`p2pCleared` 记录处理数，`fetchHookReleased` 仅在停止时实际恢复 fetch 后为真。
 
+### Safari FLV preload
+
+`createPreloadGuard` 在 Safari 的两种模式都中和 `web-encrypt` 首流加载器插入的无尽 `.flv` fetch preload 提示，避免 WebKit 持续保留其数据；不拦截播放器自身的流 fetch，不改画质或页面功能。浏览器开关只取 `BROWSER.guardLivePreload`，不要再与 `cleanMode` 相与。Chromium 两种模式均保留原生提示，`livePreloadGuardEnabled:false`；Safari 均为 `true`。这与简洁模式清除 localStorage 首流缓存是两套机制；已开始加载的提示只记入 `latePreloads`，不能宣称已释放其缓存。
+
 ## 其他契约的维护边界
 
 - `storageDefaults`、`storageKeys`、`storageEnvelope`：在原生 UI 更改一次设置，再对照 Storage 中的 key、枚举及 c/e/v/r 封装。`shieldKeys` 是事件参数，`shieldStorageKeys` / `shieldPersistence` 是存储参数，注意 `smallGift` 与 `smallgift` 的区别。
@@ -116,7 +120,7 @@ Safari 版 Tampermonkey 不保证 `document-start` 先于页面脚本；Chromium
 - 广告判定看商业素材来源（广告位 id、`/japi/sign`、`dyadx`、竞价/星海素材），不看名字：`shelterAd` 名称含 Ad 但只是遮挡矩形；`InteractABAd`、`live-business-component` 混有充值/背包/主播商店，只能去其中的广告叶子节点。静态证据见 2026-10-31 调研。
 - `playerModules` 只在简洁模式卸载；`adPlayerModules` 是播放器广告，两种模式都卸载。`adCSS` 两种模式都注入，`cleanCSS` 只用于简洁模式布局。
 - 非房间路径：简洁模式只安装切房导航边界；完整模式安装广告层与 P2P 流参数处理且保留原生 SPA 导航，发现期每秒检查一次，之后每两秒一次。
-- `playerModules`：通过 React 自身更新触发真实子树卸载，不直接删 React DOM。初始或路径改变后的 20 秒内每次既有 tick 都可发现不同原型，之后停止发现；极慢加载或 20 秒后才出现的新原型可能不被覆盖。
+- `playerModules`：通过 React 自身更新触发真实子树卸载，不直接删 React DOM。初始或路径改变后的 20 秒内每次既有 tick 都可发现不同原型；当前路径/根的全部目标 id 已挂钩后提前跳过遍历，主要减少完整模式四个广告 id 齐备后的扫描。发现调用先比较 pathname 与 `ids.player` 的 `_reactRootContainer._internalRoot.current`；任一变化都重置当前目标完成状态，不清除累计模块诊断或已有 hooks。路径改变仍重开 20 秒窗口；新根只在发现窗口内恢复扫描，极慢加载或 20 秒后才出现的新原型可能不被覆盖。
 - `cleanCSS`：集中保存站点 CSS 前缀和布局关系；`data-dy-*`、`douyu-clean-*` 是本脚本拥有的标记，不是待猜测的站点选择器。
 - 导航、页面退出与 FLV preload 的浏览器语义不应与站点选择器一起盲改。继续保留修改键、下载、表单、跨域、query/hash 记账和历史遍历的排除条件。
 
