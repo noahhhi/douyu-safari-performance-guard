@@ -8,7 +8,7 @@ const cases = [
     ['Chromium', 'Mozilla/5.0 AppleWebKit/537.36 Chromium/142.0.0.0 Safari/537.36', false, true],
     ['Firefox', 'Mozilla/5.0 (Macintosh) Gecko/20100101 Firefox/144.0', false, false],
 ];
-const prefix = source.slice(0, source.indexOf('    const navigation = installRoomNavigationBoundary();'));
+const prefix = source.slice(0, source.indexOf('    const navigation = isCleanMode()'));
 for (const [name, userAgent, safari, chromium] of cases) {
     const {BROWSER} = load({navigator:{userAgent}});
     assert.equal(BROWSER.isSafari,safari,name);

@@ -32,7 +32,12 @@
         resourceHost: /(?:^|\.)douyucdn\.cn$/, // Network：独立静态分包的 CDN 主机后缀。
         packageSegment: 'front-publish', // Network：URL 中包目录的上一层。
         // 独立业务包：Network 中 front-publish/<包名>/ 的包名；确认与播放、登录、聊天无关后整包阻断。
+        // 分类默认只在简洁模式生效；fullMode:true 的分类（仅广告）在完整模式同样生效。
         resourceCategories: {
+            // 广告：sign 是 SHARK 广告位启动器（不是登录/签到），asideTopSuspension 是侧边悬浮广告（含优量汇竞价）。
+            ads: {enabled:true, fullMode:true, rules:[
+                {host:/(?:^|\.)douyucdn\.cn$/, pkg:'live-next-master', fileRegex:/^(?:sign|asideTopSuspension)_/},
+            ]},
             activity: {enabled:true, packages:[
                 'live-act-diamond-carnival-master',
                 'live-activity-common-pendant-master',
@@ -83,27 +88,27 @@
             ]},
             aside: {enabled:true, packages:[]}, // 侧栏视觉分包；名称来自 Network/webpack chunk 映射。
             // 房间页独立挂件：live-next-master/js/room/<名称>_<hash>.js，由 SHARK 加载器插入；
-            // 加载器 onerror 继续队列。sign 是广告位（不是登录），chatInteration 是投票互动
+            // 加载器 onerror 继续队列。chatInteration 是投票互动
             // （原生发送器在 live-next-player-aside 主包），superFans 渲染 #js-room-activity。
             // 播放器 React.lazy 子模块（WarGame、SvgaPlayer 等）失败会拒绝 Suspense，不可加入。
             roomWidgets: {enabled:true, rules:[
                 {host:/(?:^|\.)douyucdn\.cn$/, pkg:'live-next-master',
-                    fileRegex:/^(?:sign|asideTopSuspension|chatInteration|lotteryDraw|superFans)_/},
+                    fileRegex:/^(?:chatInteration|lotteryDraw|superFans)_/},
             ]},
             // 主播/超管工具：menu 仅在 uid===owner_uid 或 groupId===5 时渲染；普通观众不需要。
             anchorTools: {enabled:true, rules:[
                 {host:/(?:^|\.)douyucdn\.cn$/, pkg:'live-next-master', fileRegex:/^(?:menu|superMenu)_/},
             ]},
-            // 实验分类（默认关闭，需 localStorage 显式启用并回归后再改为默认）。风险依次递减，见 docs/maintenance.md。
+            // 页面外围（简洁模式不显示这些区域）。各自失去的功能见 docs/maintenance.md。
             // pageHeader：header-master 1.39 MB 页头；独占 shark.header.BaseConfigService（私信、至尊/公共面板），
             // 登录另有 room common LoginService。
-            pageHeader: {enabled:false, experimental:true, packages:['header-master']},
+            pageHeader: {enabled:true, packages:['header-master']},
             // followGroups：关注后的分组设置与特别关注（Next 标题栏关注成功后会调用）。
-            followGroups: {enabled:false, experimental:true, rules:[
+            followGroups: {enabled:true, rules:[
                 {host:/(?:^|\.)douyucdn\.cn$/, pkg:'live-next-master', fileRegex:/^customGroup_/},
             ]},
             // videoAssets：底部视频合集（BottomApp videoAsset 区域），未见包外消费者。
-            videoAssets: {enabled:false, experimental:true, packages:['live-video-assets-master']},
+            videoAssets: {enabled:true, packages:['live-video-assets-master']},
             // 统计 SDK：配合 installAnalyticsSinks()；页面 inline 只在全局不存在时创建队列。
             analytics: {enabled:true, rules:[
                 {host:'hm.baidu.com', pathnameRegex:/^\/hm\.js$/},
@@ -156,7 +161,6 @@
         ],
         playerModules: [
             'videoEnhanced',
-            'gameQRCode',
             'PKView',
             'ActivePK',
             'gameHotArea',
@@ -171,13 +175,13 @@
             'commentRoleHelp',
             'gameLightDanmuCheer',
             'userPK',
-            'videoAd',
-            'userNoHandleAd',
-            'shelterAd',
-            'hyad',
+            'videoAd', // 插播/关播广告，同时转发关播 room_data_state；完整模式保留。
+            'shelterAd', // 名称含 Ad，实为遮挡矩形，不是广告；只在简洁模式卸载。
             'anchorMaiMai',
             'conMicroPhone',
-        ], // React player fiber 的 memoizedProps.id；确认只卸载视觉/业务模块，保留原生控制与通信。
+        ], // React player fiber 的 memoizedProps.id；确认只卸载视觉/业务模块，保留原生控制与通信。仅简洁模式。
+        // 同上，播放器广告素材模块；两种模式都卸载：无操作广告、关播推荐广告、品牌/竞价中插、游戏下载推广。
+        adPlayerModules: ['userNoHandleAd', 'recommendAD', 'hyad', 'gameQRCode'],
         removeIds: [
             'js-header',
             'js-player-asideMain',
@@ -209,11 +213,12 @@
             media: '#js-player-video-case video,#js-player-video-case audio', // Elements：退出时需释放的媒体。
         },
         storageKeys: {
-            cleanMode: 'douyu-safari-clean-mode', // 本脚本拥有；on/off 与历史版本兼容。
+            // 本脚本拥有：'off' 为完整模式，其余（含未设置）为简洁模式；按站点 origin 记忆，与历史版本兼容。
+            cleanMode: 'douyu-safari-clean-mode',
             // 本脚本拥有：逗号分隔的分类名，临时关闭这些阻断分类，用于斗鱼更新后二分排查或 A/B 测量，
             // 例如 localStorage['douyu-safari-disabled-categories'] = 'roomWidgets,analytics'。
             disabledCategories: 'douyu-safari-disabled-categories',
-            // 同格式：启用代码中默认关闭的实验分类，例如 'videoAssets,followGroups'。关闭列表优先。
+            // 同格式：启用代码中 enabled:false 的分类。关闭列表优先。
             enabledCategories: 'douyu-safari-enabled-categories',
             shield: 'chat-shield-config', // Storage：改一次原生屏蔽设置并对照 JSON envelope。
             preload: 'h5StreamPreload_h5p_room', // Storage/首流加载代码：自动档流缓存。
@@ -273,8 +278,8 @@
             [data-dy-clean-path]>:not([data-dy-clean-path]):not([data-dy-clean-core]):not(#douyu-clean-toggle) { display:none!important; }
             [data-dy-clean-core] { position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;max-width:none!important;margin:0!important;background:#000!important;z-index:2147480000!important; }
             #js-player-dialog,#js-player-for-audio,#js-player-video-above,#js-player-guessgame,#js-pk-progress,
-            [data-dy-clean-core]>[class^="pendant__"],.DanmuEffectDom,.EffectPlayerDom,.MatchSystemPlayerInteractive,.XinghaiAd,
-            #player_h5_adDom,.PIPAdLayer,[data-dy-clean-core] [class^="bg__"],
+            [data-dy-clean-core]>[class^="pendant__"],.DanmuEffectDom,.EffectPlayerDom,.MatchSystemPlayerInteractive,
+            [data-dy-clean-core] [class^="bg__"],
             [data-dy-clean-core] [class^="broadcastDiv-"],[data-dy-clean-core] [class^="customBc-"],
             [data-dy-clean-core] [class^="aiHighlightEntry-"] { display:none!important; }
             [data-dy-clean-core] .barrage-gradient.is-animation { animation:none!important;background-position:100% 50%!important; }
@@ -284,6 +289,12 @@
             [data-dy-clean-core] [class^="case__"]:has(#js-player-controlbar:focus-within) { transform:translateY(0)!important; }
             #js-player-controlbar:focus-within [class*="ControlBar-"] { opacity:1!important;visibility:visible!important;display:flex!important; }
         `, // Elements/Styles：所有站点类名前缀和布局关系集中在这里；data-dy-* 为本脚本标记。
+        // 不要加入 .PIPAdLayer：网页全屏时斗鱼把真正的直播容器移进该层，隐藏会连直播一起隐藏。
+        adCSS: `
+            .SignBaseComponent-sign-ad,.SignBaseComponent-sign-text,.RoomText-wrap:has(.RoomText-item--link[data-dysign]),
+            .InteractABAd-signText,.DropMenuList-ad,.DropPane-ad,.layout-BottomAdvert,.XinghaiAd,.SignRoomAnchorAd,
+            .ScreenBannerAd,#player_h5_adDom { display:none!important; }
+        `, // Elements/Styles：只含已确认的广告叶子节点，不隐藏宿主；两种模式都注入。
     };
     // Browser policy, not codec detection: Chromium also advertises AppleWebKit.
     // Preserve the existing Safari predicate; let Douyu choose its media backend.
@@ -293,10 +304,15 @@
         const isSafari = /AppleWebKit/.test(ua) && /Safari/.test(ua) && !isChromium;
         return Object.freeze({isSafari, isChromium, guardLivePreload:isSafari});
     })();
+    // Mode — 简洁模式：只保留最高画质视频与弹幕观看/发送，其余一律不加载；
+    // 完整模式：只去广告，不改页面、画质、弹幕设置和导航。工厂各自读取，切换按钮写入并重载。
+    function isCleanMode() {
+        try { return localStorage.getItem(DOUYU.storageKeys.cleanMode) !== 'off'; } catch { return true; }
+    }
     const DISCOVERY_WINDOW_MS = 20000; // 共用现有 tick，不新增定时器/大子树观察器。
 
     if (window.top !== window.self || !(BROWSER.isSafari || BROWSER.isChromium)) return;
-    const navigation = installRoomNavigationBoundary();
+    const navigation = isCleanMode() ? installRoomNavigationBoundary() : {stop() {}};
     if (!DOUYU.roomPath.test(location.pathname)) return;
     if (window.__douyuSafariGuard) return;
 
@@ -402,10 +418,10 @@
         }};
     }
 
-    // Category switch — 代码里的 enabled 与本地临时关闭列表合并；读不到存储时按代码默认。
-    function categoryEnabled(name) {
+    // Category switch — 模式、代码里的 enabled 与本地开关列表合并；读不到存储时按代码默认。
+    function categoryEnabled(name, clean = isCleanMode()) {
         const config = DOUYU.resourceCategories[name];
-        if (!config) return false;
+        if (!config || (!clean && !config.fullMode)) return false;
         const listed = key => {
             try { return (localStorage.getItem(key) || '').split(',').map(item => item.trim()).includes(name); }
             catch { return false; }
@@ -417,7 +433,7 @@
     // Resource gate — 加载前拦截独立业务；依赖 resourceCategories/rules/iframes/asideChunks。
     function createOptionalResourceGate() {
         let enabled = true;
-        try { enabled = localStorage.getItem(DOUYU.storageKeys.cleanMode) !== 'off'; } catch {}
+        const clean = isCleanMode();
         const blocked = new Map(), marked = new WeakSet();
         let late = 0;
         // Observed, independent business bundles. Shared bootstrap, sign-in,
@@ -426,7 +442,7 @@
         // touching the gate. Category flags are read when the factory is created.
         const rules = [], packages = new Set();
         for (const [category, config] of Object.entries(DOUYU.resourceCategories)) {
-            if (!categoryEnabled(category)) continue;
+            if (!categoryEnabled(category, clean)) continue;
             for (const pkg of config.packages || []) packages.add(pkg);
             for (const rule of config.rules || []) rules.push(rule);
             if (category === 'aside' && DOUYU.asideChunks.length) {
@@ -436,7 +452,7 @@
             }
         }
         for (const rule of [...DOUYU.resourceRules, ...DOUYU.iframes]) {
-            if (categoryEnabled(rule.category)) rules.push(rule);
+            if (categoryEnabled(rule.category, clean)) rules.push(rule);
         }
         function matches(pattern, value) {
             if (typeof pattern === 'string') return pattern === value;
@@ -486,10 +502,10 @@
     }
 
     // Player module trim — 通过原生连接器卸载；依赖 ids.player、playerModules 和 React fiber 契约。
-    function createPlayerModuleTrim() {
+    function createPlayerModuleTrim(moduleIds) {
         // Optional visual/business modules only. Keep playback, chat, authentication,
         // moderation, error handling, media session and every native control.
-        const optional = new Set(DOUYU.playerModules);
+        const optional = new Set(moduleIds);
         const hooks = new Map(), seen = new Set(), errors = new Set();
         let enabled = true, stopped = false, visits = 0;
         function visit() {
@@ -614,9 +630,9 @@
     // Clean controller — 布局、原生控制与发送、退出释放；依赖 selectors/ids/storage/runtime/cleanCSS。
     function createCleanController() {
         const modeKey = DOUYU.storageKeys.cleanMode;
-        let enabled = true;
-        try { enabled = localStorage.getItem(modeKey) !== 'off'; } catch {}
-        const moduleTrim = enabled ? createPlayerModuleTrim() : null;
+        const enabled = isCleanMode();
+        const moduleTrim = createPlayerModuleTrim(enabled ?
+            [...DOUYU.adPlayerModules, ...DOUYU.playerModules] : DOUYU.adPlayerModules);
         const discoveryStartedAt = performance.now();
         const health = createAdapterHealth();
         const removeIds = new Set(DOUYU.removeIds);
@@ -642,8 +658,8 @@
                 writeNative(DOUYU.storageKeys.shield, JSON.stringify(config));
             } catch {}
         }
-        setStartupDefaults();
-        let stopped = false, root, style, button, timer, attempts = 0;
+        if (enabled) setStartupDefaults();
+        let stopped = false, root, style, adStyle, button, timer, attempts = 0;
         let unmounted = 0, suppressedRenders = 0, defaultsApplied = false;
         let disposedRoots = 0, releasedMedia = 0;
         let senderHost, senderRenderer;
@@ -722,7 +738,7 @@
         }
         document.addEventListener('click', onShieldClick, true);
         function applyNativeControls() {
-            if (defaultsApplied || !document.querySelector(DOUYU.selectors.controlbar)) return;
+            if (!enabled || defaultsApplied || !document.querySelector(DOUYU.selectors.controlbar)) return;
             const items = [...document.querySelectorAll(DOUYU.selectors.shieldItem)];
             const quarter = [...document.querySelectorAll(DOUYU.selectors.iconLabel)].find(e => e.textContent === DOUYU.controls.quarterText);
             if (items.length < DOUYU.controls.shieldCount || !quarter) return;
@@ -733,12 +749,9 @@
             }
             // Initialize the same native player event without mounting the sidebar.
             if (!quarterSelected) quarter.parentElement.click();
-            if (enabled && typeof DOUYU.runtime.player()?.acjCall === 'function' && attempts % 8 === 0) {
+            if (typeof DOUYU.runtime.player()?.acjCall === 'function' && attempts % 8 === 0) {
                 const config = Object.fromEntries(Object.values(shieldKeys).map(key => [key, 1]));
                 DOUYU.runtime.player().acjCall(DOUYU.controls.shieldEvent, config);
-            } else if (!enabled && attempts > 12 && attempts % 8 === 0) {
-                const unchecked = items.find(item => !item.querySelector(DOUYU.selectors.checked));
-                if (unchecked) unchecked.click();
             }
         }
         function findElement(element, predicate) {
@@ -812,11 +825,17 @@
             }
             window.dispatchEvent(new Event('resize'));
         }
+        function setupAdStyle() {
+            if (adStyle?.isConnected || !document.head) return;
+            adStyle = document.createElement('style'); adStyle.id='douyu-ad-hide';
+            adStyle.textContent=DOUYU.adCSS; document.head.append(adStyle);
+        }
         function setupButton() {
             if (button?.isConnected || !document.body || !document.querySelector(DOUYU.selectors.videoCase)) return;
             button=document.createElement('button'); button.id='douyu-clean-toggle'; button.type='button';
-            button.textContent = enabled ? '恢复完整页面' : '开启纯净模式';
-            button.title = '切换后重新载入；最高画质、特效屏蔽和 1/4 屏弹幕为默认设置。';
+            button.textContent = enabled ? '完整模式' : '简洁模式';
+            button.title = enabled ? '切换到完整模式：只去广告，页面其余保持原样。切换后重新载入并记住选择。' :
+                '切换到简洁模式：只保留最高画质视频与弹幕收发。切换后重新载入并记住选择。';
             button.style.cssText='position:fixed;right:12px;top:12px;z-index:2147483000;border:1px solid #ffffff44;border-radius:4px;padding:5px 8px;background:#222b;color:#ddd;font:12px system-ui;cursor:pointer;opacity:.5;';
             button.addEventListener('click', () => {
                 try { localStorage.setItem(modeKey, enabled ? 'off' : 'on'); } catch {}
@@ -831,9 +850,9 @@
                 unmountAuxiliary();
                 setupLayout();
                 setupNativeSender();
-                if (performance.now() - discoveryStartedAt <= DISCOVERY_WINDOW_MS) moduleTrim?.discover();
             }
-            applyNativeControls(); setupButton();
+            if (performance.now() - discoveryStartedAt <= DISCOVERY_WINDOW_MS) moduleTrim.discover();
+            applyNativeControls(); setupAdStyle(); setupButton();
             health.observe(enabled, {rendererHooks:renderers.size, playerModuleHooks:moduleTrim?.hookCount(),
                 nativeSender:!!senderHost?.isConnected, senderFailed:failures.has('native-sender')});
             // Preserve the existing 250 ms / 2 s cadence. Module discovery ends
@@ -888,11 +907,11 @@
                     try { senderRenderer?.unmountComponentAtNode(senderHost); } catch { failures.add('dispose:sender'); }
                     senderHost.remove(); senderHost=null;
                 }
-                style?.remove(); button?.remove();
+                style?.remove(); adStyle?.remove(); button?.remove();
                 for (const el of document.querySelectorAll('[data-dy-clean-path],[data-dy-clean-core]')) {
                     el.removeAttribute('data-dy-clean-path'); el.removeAttribute('data-dy-clean-core');
                 }
-                root=null; senderRenderer=null; style=null; button=null;
+                root=null; senderRenderer=null; style=null; adStyle=null; button=null;
                 renderers.clear(); rendererRestorers.length=0;
                 // Component unmounting is irreversible in-place; reload restores
                 // the complete site. The visible mode button performs that reload.
@@ -949,7 +968,7 @@
     }
 
     // Preload guard — DOM 插入和 head fallback；依赖 endpoints.liveMedia 与 resource gate。
-    function createPreloadGuard(optionalResources) {
+    function createPreloadGuard(optionalResources, guardLivePreload = BROWSER.guardLivePreload) {
         const restorers = [];
         const marked = new WeakSet();
         let blocked = 0;
@@ -972,7 +991,7 @@
         }
 
         function neutralize(node) {
-            if (!active || !BROWSER.guardLivePreload || !isLivePreload(node)) return;
+            if (!active || !guardLivePreload || !isLivePreload(node)) return;
             // Keep the node and href for the site's bookkeeping; only suppress the
             // resource hint. Do this BEFORE insertion, not after download starts.
             if (!marked.has(node)) {
@@ -1040,7 +1059,7 @@
         watchHead();
         document.addEventListener('DOMContentLoaded', watchHead, {once: true});
         return {
-            status: () => ({active, livePreloadGuardEnabled:BROWSER.guardLivePreload, blockedLivePreloads:blocked, latePreloads:late}),
+            status: () => ({active, livePreloadGuardEnabled:guardLivePreload, blockedLivePreloads:blocked, latePreloads:late}),
             deactivate: () => { active=false; }, // Stop interception before native/React teardown starts.
             stop(release) {
                 active=false;
@@ -1057,9 +1076,7 @@
     // 晚注入时不替换已有对象，collect-rangers 规则也随之失效，真实 SDK 照常加载。
     function installAnalyticsSinks() {
         const installed = [];
-        let enabled = categoryEnabled('analytics');
-        try { enabled = enabled && localStorage.getItem(DOUYU.storageKeys.cleanMode) !== 'off'; } catch {}
-        if (!enabled) return {installed};
+        if (!categoryEnabled('analytics')) return {installed};
         const sink = () => {
             const queue = [];
             Object.defineProperty(queue, 'push', {configurable:true, value:() => 0});
@@ -1190,16 +1207,18 @@
         return {status:() => ({phase, issued, last:last && {...last}}), stop:() => finish('stopped')};
     }
 
+    // 完整模式只装广告相关部分：资源 gate（仅 ads 分类）、DOM 插入挂钩、广告模块卸载与 CSS。
+    const cleanMode = isCleanMode();
     const analytics = installAnalyticsSinks();
     const optionalResources = createOptionalResourceGate();
-    const startupQuality = installStartupQuality();
+    const startupQuality = cleanMode ? installStartupQuality() : null;
     let clean;
     try { clean = createCleanController(); } catch {}
     let quality;
-    try { quality = createQualityRecovery(); } catch {}
+    if (cleanMode) try { quality = createQualityRecovery(); } catch {}
     const version = '3.7.0';
     const startedAt = Date.now();
-    const preload = createPreloadGuard(optionalResources);
+    const preload = createPreloadGuard(optionalResources, cleanMode && BROWSER.guardLivePreload);
     let active = true;
     const cleanupErrors = new Set();
     function stopGuard(exiting = false) {
@@ -1209,16 +1228,17 @@
         const release = (stage, fn) => { try { fn(); } catch { cleanupErrors.add(stage); } };
         if (exiting) release('player', () => clean?.disposePlayer());
         release('resources', () => optionalResources.stop());
-        release('startup', () => startupQuality.stop());
+        release('startup', () => startupQuality?.stop());
         release('quality', () => quality?.stop());
         release('clean', () => clean?.stop({exiting}));
         preload.stop(release);
         release('navigation', () => navigation.stop());
     }
-    const lifecycle = installPageLifecycle(() => stopGuard(true));
-    const diagnostics = createDiagnostics(() => ({version, ...preload.status(), active, startedAt,
+    // 离开即销毁播放器属于简洁模式的内存处理；完整模式不改页面生命周期。
+    const lifecycle = cleanMode ? installPageLifecycle(() => stopGuard(true)) : {status:() => null, stop() {}};
+    const diagnostics = createDiagnostics(() => ({version, mode:cleanMode ? 'clean' : 'full', ...preload.status(), active, startedAt,
         readyStateAtInstall, installedAtMs, browser:{...BROWSER}, lifecycle:lifecycle.status(), cleanupErrors:[...cleanupErrors],
-        optionalResources:optionalResources.status(), startupQuality:startupQuality.status(),
+        optionalResources:optionalResources.status(), startupQuality:startupQuality?.status() ?? null,
         qualityRecovery:quality?.status(), analyticsSinks:analytics.installed, clean:clean?.status()}));
     Object.defineProperty(window, '__douyuSafariGuard', {
         configurable: true,

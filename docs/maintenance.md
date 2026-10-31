@@ -17,7 +17,7 @@ console.table(s?.adapterHealth?.contracts);
 - `found`：找到契约，`foundAtMs` 为首次记录它的相对时间。选择器和 ID 表示启动窗口内**曾经找到**，不是节点持续存活的保证。
 - `missing`：约 20 秒后的既有 tick 仍未找到。懒加载菜单、离线/受限房间、网络慢、房间本身没有某项模块也可能造成 missing，不能单凭此状态断言网站改版。
 - `failed`：原生发送服务初始化曾抛出异常；结合 `clean.failures` 排查。失败记录保留到本次页面结束，即使后来重试成功。
-- `not-applicable`：完整模式不启用的纯净模式服务，不应当作缺失。
+- `not-applicable`：完整模式不启用的简洁模式服务，不应当作缺失。
 
 选择器和容器 ID 的检查在启动窗口结束后的首次 tick 关闭，不再持续扫描；运行时全局、renderer/module hook 数量和发送服务状态仍随原来的 tick 更新。诊断不新增轮询定时器，不增加大子树 MutationObserver，也不保留诊断节点引用。`stopped: true` 表示控制器已停止，保留最后观测；控制器整体初始化失败时顶层返回 `state: 'failed'`、`reason: 'clean-controller-initialization'`。
 
@@ -40,7 +40,7 @@ console.table(s?.adapterHealth?.contracts);
 
 ## 如何找新的 chunk 名
 
-1. 在开发者工具 Network 中比较完整模式和纯净模式，筛选 JS/CSS、`front-publish` 和相关业务名，查看 URL 的主机、包目录、最后一个文件名及 Initiator。
+1. 在开发者工具 Network 中比较完整模式和简洁模式，筛选 JS/CSS、`front-publish` 和相关业务名，查看 URL 的主机、包目录、最后一个文件名及 Initiator。
 2. 在已经加载的主入口中搜索 webpack chunk 名与 URL 映射。记录稳定名称前缀，例如 `SomeOptionalWidget_`，而不是发布时变化的 hash。
 3. 查清 chunk 的用途、依赖和启动时机。与播放器控制、登录、弹幕通信、发送、鉴权、编解码共享的入口不能因为体积大就拦截。
 4. 对独立业务先做单项验证：播放/画质切换、弹幕收发、菜单/全屏、同源切房、返回目录、前进后退都应保持。不能把“CSS 隐藏了”当作资源或服务已卸载。
@@ -56,7 +56,7 @@ console.table(s?.adapterHealth?.contracts);
 
 在相应分类的 `packages` 中添加一行包名并注释证据。它只匹配 `resourceHost` CDN 主机上 `front-publish/<包名>/...` 的 script/link，不扩展到 iframe 或任意同名第三方路径。
 
-将分类的 `enabled` 改为 `false` 可停止该分类的资源拦截，包括标记为同分类的 SDK/iframe；此开关**不是**卸载模块或 CSS 布局开关，也不恢复已取消的加载。完整模式会关闭整个可选资源 gate。
+将分类的 `enabled` 改为 `false` 可停止该分类的资源拦截，包括标记为同分类的 SDK/iframe；此开关**不是**卸载模块或 CSS 布局开关，也不恢复已取消的加载。分类默认只在简洁模式生效；只有标记 `fullMode:true` 的分类（目前仅 `ads`）在完整模式也生效。完整模式只去广告，不要给非广告分类加 `fullMode`。
 
 ### 指定主机、包和文件
 
@@ -90,13 +90,13 @@ analytics: {enabled:true, packages:[], rules:[
 localStorage.setItem('douyu-safari-disabled-categories', 'roomWidgets,analytics');
 ```
 
-再重新载入。启用默认关闭的实验分类用 `douyu-safari-enabled-categories`（例如 `videoAssets,followGroups`），两个列表同时包含时以关闭为准。分类名即 `DOUYU.resourceCategories` 的键（如 `activity`、`gifts`、`games`、`roomWidgets`、`anchorTools`、`analytics`）。斗鱼更新后若某功能失效，可逐个关闭分类定位；测量某分类的内存收益时，用全新标签页分别载入开启/关闭两种状态。排查完成后执行 `localStorage.removeItem('douyu-safari-disabled-categories')`。
+再重新载入。启用代码中 `enabled:false` 的分类用 `douyu-safari-enabled-categories`，两个列表同时包含时以关闭为准。分类名即 `DOUYU.resourceCategories` 的键（如 `activity`、`gifts`、`games`、`roomWidgets`、`anchorTools`、`analytics`）。斗鱼更新后若某功能失效，可逐个关闭分类定位；测量某分类的内存收益时，用全新标签页分别载入开启/关闭两种状态。排查完成后执行 `localStorage.removeItem('douyu-safari-disabled-categories')`。
 
 关闭 `analytics` 时也不会安装统计替身。`collect-rangers` 规则另有 `when` 条件：只有本脚本的 `collectEvent` 回调替身先于页面 inline 代码就位才会阻断，晚注入时保留真实 SDK。
 
-### 实验分类的风险
+### 页面外围分类失去的功能
 
-静态审查（2026-10-31）结论，开启前按此回归：
+`pageHeader`、`followGroups`、`videoAssets` 在简洁模式默认开启（简洁模式本来就不显示这些区域）。静态审查（2026-10-31）结论，斗鱼改版后按此回归：
 
 - `videoAssets`（live-video-assets）：只向 `BottomApp` 的 `videoAsset` 区域推送底部视频合集，未见包外消费者。风险低。
 - `followGroups`（live-next `customGroup_`）：普通关注接口不受影响，但 Next 标题栏在关注成功后会请求分组提示、发送 `cutomGroup_showGroupSetting` 并监听特别关注状态，这些后续操作随之失效。共享 `Modal_` chunk 不在阻断范围内。
@@ -110,7 +110,9 @@ Safari 版 Tampermonkey 不保证 `document-start` 先于页面脚本；Chromium
 ## 其他契约的维护边界
 
 - `storageDefaults`、`storageKeys`、`storageEnvelope`：在原生 UI 更改一次设置，再对照 Storage 中的 key、枚举及 c/e/v/r 封装。`shieldKeys` 是事件参数，`shieldStorageKeys` / `shieldPersistence` 是存储参数，注意 `smallGift` 与 `smallgift` 的区别。
-- `removeIds`：只允许独立辅助 React 根。不要把播放器或发送/登录/聊天通信根加入列表。恢复完整页面仍依靠重新加载，不尝试在原地恢复已卸载业务。
+- `removeIds`：只允许独立辅助 React 根。不要把播放器或发送/登录/聊天通信根加入列表。切换模式依靠重新加载，不尝试在原地恢复已卸载业务。
+- 广告判定看商业素材来源（广告位 id、`/japi/sign`、`dyadx`、竞价/星海素材），不看名字：`shelterAd` 名称含 Ad 但只是遮挡矩形；`InteractABAd`、`live-business-component` 混有充值/背包/主播商店，只能去其中的广告叶子节点。静态证据见 2026-10-31 调研。
+- `playerModules` 只在简洁模式卸载；`adPlayerModules` 是播放器广告，两种模式都卸载。`adCSS` 两种模式都注入，`cleanCSS` 只用于简洁模式布局。
 - `playerModules`：通过 React 自身更新触发真实子树卸载，不直接删 React DOM。初始 20 秒内每次既有 tick 都可发现不同原型，之后停止发现；极慢加载或 20 秒后才出现的新原型可能不被覆盖。
 - `cleanCSS`：集中保存站点 CSS 前缀和布局关系；`data-dy-*`、`douyu-clean-*` 是本脚本拥有的标记，不是待猜测的站点选择器。
 - 导航、页面退出与 FLV preload 的浏览器语义不应与站点选择器一起盲改。继续保留修改键、下载、表单、跨域、query/hash 记账和历史遍历的排除条件。
