@@ -1,4 +1,4 @@
-# Douyu Safari Performance Guard
+# 斗鱼简洁模式（Douyu Clean Mode）
 
 斗鱼直播纯净模式与内存优化用户脚本，适用于 Safari，并提供 Chrome / Edge（Chromium）兼容入口。Chrome 156 已实测（Edge 未测）；保留原项目和脚本名称以维持更新连续性。保留**视频播放、弹幕（含发送）和视频控制**，减少非核心业务的加载和运行。
 
