@@ -33,9 +33,13 @@ for (const path of ['/lapi/live/getH5PlayV1/93589','/gapi/live/web/super/stream/
     quality.stop();assert.equal(c.window.fetch,fetch);
 }
 {
-    const {c,quality,calls,fetch}=harness(), init={method:'post',body:'rate=2'};
+    // A saved lower preference is also overridden on the first request only.
+    const {c,quality,calls,fetch}=harness(), init={method:'post',body:'cdn=x&rate=4&ver=1'};
     c.window.fetch(new URL('https://www.douyu.com/lapi/live/getH5PlayV1/93589'),init);
-    assert.equal(calls.at(-1).args[1],init);assert.equal(quality.status().request.sentRate,'2');assert.equal(c.window.fetch,fetch);
+    assert.equal(calls.at(-1).args[1].body,'cdn=x&rate=0&ver=1');assert.equal(quality.status().request.fromRate,'4');
+    assert.equal(quality.status().request.sentRate,'0');assert.equal(c.window.fetch,fetch);
+    const original={method:'post',body:'rate=0'};c.window.fetch(new URL('https://www.douyu.com/lapi/live/getH5PlayV1/93589'),original);
+    assert.equal(calls.at(-1).args[1],original,'later requests pass through untouched');
 }
 {
     const {c,quality,listeners}=harness();

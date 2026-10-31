@@ -249,8 +249,8 @@
         },
         endpoints: {
             firstStream: /^\/(?:lapi\/live\/getH5PlayV1|gapi\/live\/web\/super\/stream\/v1)\/\d+$/, // Network：同源 POST 首流接口。
-            rateField: /(?:^|&)rate=([^&]*)/, autoRateField: /(^|&)rate=-1(?=&|$)/, // Network：form body 的原生自动档 -1。
-            originalRateBody: '$1rate=0', // Network/画质设置：原画/最高档为 0；仅改首个自动档请求。
+            rateField: /(?:^|&)rate=([^&]*)/, rateReplace: /(^|&)rate=[^&]*/, // Network：form body 的档位；原生自动档为 -1。
+            originalRateBody: '$1rate=0', // Network/画质设置：原画/最高档为 0；只改首个请求，之后用户手动切档不受影响。
             liveMedia: /\.flv$/i, // Network：无尽直播 FLV；只阻止 fetch preload，不拦播放器请求。
         },
         runtime: {
@@ -944,12 +944,11 @@
                     if (match) {
                         handled = true;
                         const from = match[1];
-                        // Only the automatic first request needs rewriting. Respect
-                        // explicitly selected rates and all subsequent user changes.
-                        if (from === '-1') nextInit = {...init,
-                            body:init.body.replace(DOUYU.endpoints.autoRateField,DOUYU.endpoints.originalRateBody)};
-                        request = {atMs:Math.round(performance.now()), path:url.pathname,
-                            fromRate:from, sentRate:from === '-1' ? '0' : from};
+                        // Clean mode always starts at original quality, whatever automatic
+                        // rate or saved preference Douyu chose; later user changes are untouched.
+                        if (from !== '0') nextInit = {...init,
+                            body:init.body.replace(DOUYU.endpoints.rateReplace,DOUYU.endpoints.originalRateBody)};
+                        request = {atMs:Math.round(performance.now()), path:url.pathname, fromRate:from, sentRate:'0'};
                         if (window.fetch === wrappedFetch) window.fetch = nativeFetch;
                         fetchHookReleased = true;
                     }

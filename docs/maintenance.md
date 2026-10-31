@@ -105,7 +105,7 @@ localStorage.setItem('douyu-safari-disabled-categories', 'roomWidgets,analytics'
 
 ## 注入时机与画质补救
 
-Safari 版 Tampermonkey 不保证 `document-start` 先于页面脚本；Chromium 版只有 **UserScripts API Dynamic** 注入模式能保证。`status().readyStateAtInstall` / `installedAtMs` 记录实际注入时刻，`startupQuality.request` 为空或 `fromRate` 不是 `-1` 时说明首流已错过改写。此时 `createQualityRecovery()` 在播放器 store 就绪后调用一次原生 `handleAcj('loadWithoutPerception','changeRate',[{rate:0, manual:true}])`；`status().qualityRecovery.phase` 说明结果（`issued`、`already-original`、`native-change`、`user-input`、`timeout` 等）。斗鱼改版后若长期为 `timeout` 且 `last` 为空，先检查 `runtime.playerStore` 与 h5-plugin 的 `mapStateToProps` 字段。
+Safari 版 Tampermonkey 不保证 `document-start` 先于页面脚本；Chromium 版只有 **UserScripts API Dynamic** 注入模式能保证。`status().readyStateAtInstall` / `installedAtMs` 记录实际注入时刻，`startupQuality.request` 为空时说明首流已错过改写（脚本注入前请求已发出）。此时 `createQualityRecovery()` 在播放器 store 就绪后调用一次原生 `handleAcj('loadWithoutPerception','changeRate',[{rate:0, manual:true}])`；`status().qualityRecovery.phase` 说明结果（`issued`、`already-original`、`native-change`、`user-input`、`timeout` 等）。斗鱼改版后若长期为 `timeout` 且 `last` 为空，先检查 `runtime.playerStore` 与 h5-plugin 的 `mapStateToProps` 字段。
 
 ## 其他契约的维护边界
 
@@ -128,7 +128,7 @@ Safari 版 Tampermonkey 不保证 `document-start` 先于页面脚本；Chromium
 5. `createPlayerModuleTrim`：原生可选模块发现与卸载。
 6. `createAdapterHealth` / `createDiagnostics`：轻量契约观测与兼容公开状态。
 7. `createCleanController`：原生设置、React 根清理、发送服务、布局和 tick。
-8. `installStartupQuality`：首次自动档请求与首次视频元数据。
+8. `installStartupQuality`：简洁模式把首个播放请求改为原画（无论原档位），并记录首次视频元数据。
 9. `createPreloadGuard`：DOM 插入快路径、FLV preload 与原有 head fallback。
 10. `categoryEnabled` / `installAnalyticsSinks` / `createQualityRecovery`：分类临时开关、统计替身、晚注入画质补救。
 11. 文件末尾：模块装配、停止顺序、公开 `window.__douyuSafariGuard`。
