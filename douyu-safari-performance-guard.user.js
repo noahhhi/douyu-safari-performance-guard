@@ -293,8 +293,13 @@
         adCSS: `
             .SignBaseComponent-sign-ad,.SignBaseComponent-sign-text,.RoomText-wrap:has(.RoomText-item--link[data-dysign]),
             .InteractABAd-signText,.DropMenuList-ad,.DropPane-ad,.layout-BottomAdvert,.XinghaiAd,.SignRoomAnchorAd,
-            .ScreenBannerAd,#player_h5_adDom { display:none!important; }
-        `, // Elements/Styles：只含已确认的广告叶子节点，不隐藏宿主；两种模式都注入。
+            .ScreenBannerAd,#player_h5_adDom,
+            #js-room-activity,.ActivityDiamondFansDiscountRankBanner,
+            #js-player-main :is([class^="activeContainer__"],[class*=" activeContainer__"]),
+            #js-toolbar-interact,.RechargeFeedbackActEntry,.RechargeFeedbackActTip,.DiamondCommonRoomPush { display:none!important; }
+        `, // Elements/Styles：两种模式都注入，不隐藏宿主。第一组是广告位；第二组是站内付费活动推广：
+           // 右侧活动挂件列（兄弟 #js-room-snapbar 是功能按钮）、钻粉榜顶部横幅、标题栏活动卡片、
+           // 礼物栏左侧活动入口（兄弟是礼物/充值/背包）、充值回馈与钻粉定时推送。
     };
     // Browser policy, not codec detection: Chromium also advertises AppleWebKit.
     // Preserve the existing Safari predicate; let Douyu choose its media backend.
