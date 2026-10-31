@@ -31,7 +31,7 @@ Safari and Chromium userscript for lean Douyu live playback (Chromium validation
 3. 若 Safari 只下载了文件，在 Tampermonkey 控制台新建脚本，粘贴 `.user.js` 的完整内容并保存。也可打开 [v3.6.1 原始脚本](https://raw.githubusercontent.com/noahhhi/douyu-safari-performance-guard/v3.6.1/douyu-safari-performance-guard.user.js)。
 4. 重新加载斗鱼直播间。只启用一份本脚本，避免多个净化脚本同时修改播放器。
 
-生效范围是 `https://www.douyu.com/数字房间号` 或 `https://douyu.com/数字房间号`。在斗鱼其他路径只安装切房导航监听，以覆盖从目录进入直播间的单页路由；不在 iframe 中运行。Chrome / Edge 的 Chromium 版本可执行本脚本，真实播放与内存效果尚待验证。Firefox 仍不执行。其他脚本管理器、其他 Chromium 衍生版、手机浏览器及别名房间路径未经验证。
+简洁模式生效范围是 `https://www.douyu.com/数字房间号` 或 `https://douyu.com/数字房间号`。在斗鱼其他路径，简洁模式只安装切房导航监听，完整模式只安装广告层，以覆盖从目录进入直播间的单页路由；不在 iframe 中运行。Chrome / Edge 的 Chromium 版本可执行本脚本，真实播放与内存效果尚待验证。Firefox 仍不执行。其他脚本管理器、其他 Chromium 衍生版、手机浏览器及别名房间路径未经验证。
 
 ### Chrome / Edge（Tampermonkey MV3）
 

@@ -19,7 +19,7 @@ console.table(s?.adapterHealth?.contracts);
 - `failed`：原生发送服务初始化曾抛出异常；结合 `clean.failures` 排查。失败记录保留到本次页面结束，即使后来重试成功。
 - `not-applicable`：完整模式不启用的简洁模式服务，不应当作缺失。
 
-选择器和容器 ID 的检查在启动窗口结束后的首次 tick 关闭，不再持续扫描；运行时全局、renderer/module hook 数量和发送服务状态仍随原来的 tick 更新。诊断不新增轮询定时器，不增加大子树 MutationObserver，也不保留诊断节点引用。`stopped: true` 表示控制器已停止，保留最后观测；控制器整体初始化失败时顶层返回 `state: 'failed'`、`reason: 'clean-controller-initialization'`。
+选择器和容器 ID 的检查在启动窗口结束后的首次 tick 关闭，不再持续扫描；路径改变时重开 20 秒观察窗口。运行时全局、renderer/module hook 数量和发送服务状态仍随既有 tick 更新。诊断不新增轮询定时器，不增加大子树 MutationObserver，也不保留诊断节点引用。`stopped: true` 表示控制器已停止，保留最后观测；控制器整体初始化失败时顶层返回 `state: 'failed'`、`reason: 'clean-controller-initialization'`。
 
 常见检查顺序：
 
@@ -113,7 +113,8 @@ Safari 版 Tampermonkey 不保证 `document-start` 先于页面脚本；Chromium
 - `removeIds`：只允许独立辅助 React 根。不要把播放器或发送/登录/聊天通信根加入列表。切换模式依靠重新加载，不尝试在原地恢复已卸载业务。
 - 广告判定看商业素材来源（广告位 id、`/japi/sign`、`dyadx`、竞价/星海素材），不看名字：`shelterAd` 名称含 Ad 但只是遮挡矩形；`InteractABAd`、`live-business-component` 混有充值/背包/主播商店，只能去其中的广告叶子节点。静态证据见 2026-10-31 调研。
 - `playerModules` 只在简洁模式卸载；`adPlayerModules` 是播放器广告，两种模式都卸载。`adCSS` 两种模式都注入，`cleanCSS` 只用于简洁模式布局。
-- `playerModules`：通过 React 自身更新触发真实子树卸载，不直接删 React DOM。初始 20 秒内每次既有 tick 都可发现不同原型，之后停止发现；极慢加载或 20 秒后才出现的新原型可能不被覆盖。
+- 非房间路径：简洁模式只安装切房导航边界；完整模式安装广告层且保留原生 SPA 导航，发现期每秒检查一次，之后每两秒一次。
+- `playerModules`：通过 React 自身更新触发真实子树卸载，不直接删 React DOM。初始或路径改变后的 20 秒内每次既有 tick 都可发现不同原型，之后停止发现；极慢加载或 20 秒后才出现的新原型可能不被覆盖。
 - `cleanCSS`：集中保存站点 CSS 前缀和布局关系；`data-dy-*`、`douyu-clean-*` 是本脚本拥有的标记，不是待猜测的站点选择器。
 - 导航、页面退出与 FLV preload 的浏览器语义不应与站点选择器一起盲改。继续保留修改键、下载、表单、跨域、query/hash 记账和历史遍历的排除条件。
 

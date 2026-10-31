@@ -47,8 +47,12 @@ function environment() {
 {
     const h=environment(),c=load(h.context),health=c.createAdapterHealth();
     h.time(21000);health.observe(false,{});
-    for (const key of ['nativeSender','playerModuleHooks','rendererHooks','runtime.moduleCache','selector.senderInput']) assert.equal(health.status().contracts[key].state,'not-applicable');
-    assert.equal(health.status().contracts['selector.controlbar'].state,'missing','native controls still apply in full mode');
+    for (const key of ['nativeSender','rendererHooks','runtime.moduleCache','runtime.asideApp','runtime.playerBridge',
+        'selector.shieldItem','selector.checked','selector.iconLabel','selector.senderInput']) assert.equal(health.status().contracts[key].state,'not-applicable',key);
+    for (const key of ['playerModuleHooks','selector.controlbar','selector.videoCase','selector.media',
+        ...Object.keys(c.DOUYU.ids).map(id=>'id.'+id)]) assert.equal(health.status().contracts[key].state,'missing',key);
+    health.observe(false,{playerModuleHooks:1});
+    assert.equal(health.status().contracts.playerModuleHooks.state,'found','ad module hooks apply in full mode');
 }
 {
     const h=environment(), c=load(h.context);
@@ -84,6 +88,39 @@ function environment() {
     assert.equal(first.instance.render,first.original);
     assert.equal(second.instance.render,second.original);
     assert.equal(clean.status().adapterHealth.stopped,true);
+}
+// Full-mode SPA entry after discovery expired must reopen discovery without extra timers.
+{
+    const h=environment(), c=load(h.context);
+    h.storage.set('douyu-safari-clean-mode','off');
+    c.location.pathname='/directory';
+    const full=c.createCleanController();
+    assert.equal([...h.timers.values()][0].delay,1000,'full mode does not wait for clean-only readiness');
+    h.tick(21000);
+    assert.equal([...h.timers.values()][0].delay,2000);
+    assert.equal(full.status().adapterHealth.observationClosed,true);
+    assert.equal(full.status().adapterHealth.contracts.playerModuleHooks.state,'missing');
+    class Ad {constructor(){this.props={id:'hyad'};this.unsubscribeListener=()=>{};} render(){return 'native';} forceUpdate(){}}
+    const ad=new Ad(), original=Ad.prototype.render;
+    h.elements.set(c.DOUYU.ids.player,{_reactRootContainer:{_internalRoot:{current:{memoizedProps:ad.props,stateNode:ad}}}});
+    h.selectors.set(c.DOUYU.selectors.videoCase,{});
+    c.location.pathname='/93589';
+    h.tick(23000);
+    assert.equal(ad.render(),null,'late SPA room ad discovered');
+    assert.equal([...h.timers.values()][0].delay,1000);
+    const health=full.status().adapterHealth;
+    assert.equal(health.observationClosed,false);
+    assert.equal(health.contracts.playerModuleHooks.state,'found');
+    assert.equal(health.contracts['selector.videoCase'].state,'found');
+    assert.equal(health.contracts['selector.videoCase'].foundAtMs,0,'new path starts a fresh health window');
+    h.tick(44000);
+    assert.equal([...h.timers.values()][0].delay,2000);
+    const visits=full.status().playerModules.visits;
+    h.tick(46000);
+    assert.equal(full.status().playerModules.visits,visits,'renewed discovery is still bounded');
+    full.stop();
+    assert.equal(ad.render,original);
+    assert.equal(h.timers.size,0);
 }
 // Execute the whole userscript (not just extracted factories): catch bootstrap and public API regressions.
 {

@@ -212,6 +212,7 @@
             senderInput: '#js-player-controlbar [class^="fullScreenSendor-"] input', // Elements：原生发送输入框。
             media: '#js-player-video-case video,#js-player-video-case audio', // Elements：退出时需释放的媒体。
         },
+        cleanOnlySelectors: ['shieldItem','checked','iconLabel','senderInput'], // Diagnostics：完整模式不使用原生菜单/发送替代服务。
         storageKeys: {
             // 本脚本拥有：'off' 为完整模式，其余（含未设置）为简洁模式；按站点 origin 记忆，与历史版本兼容。
             cleanMode: 'douyu-safari-clean-mode',
@@ -291,12 +292,13 @@
         `, // Elements/Styles：所有站点类名前缀和布局关系集中在这里；data-dy-* 为本脚本标记。
         // 不要加入 .PIPAdLayer：网页全屏时斗鱼把真正的直播容器移进该层，隐藏会连直播一起隐藏。
         adCSS: `
-            .SignBaseComponent-sign-ad,.SignBaseComponent-sign-text,.RoomText-wrap:has(.RoomText-item--link[data-dysign]),
+            .SignBaseComponent-sign-ad,.SignBaseComponent-sign-text,
             .InteractABAd-signText,.DropMenuList-ad,.DropPane-ad,.layout-BottomAdvert,.XinghaiAd,.SignRoomAnchorAd,
             .ScreenBannerAd,#player_h5_adDom,
             #js-room-activity,.ActivityDiamondFansDiscountRankBanner,
-            #js-player-main :is([class^="activeContainer__"],[class*=" activeContainer__"]),
             #js-toolbar-interact,.RechargeFeedbackActEntry,.RechargeFeedbackActTip,.DiamondCommonRoomPush { display:none!important; }
+            .RoomText-wrap:has(.RoomText-item--link[data-dysign]) { display:none!important; }
+            #js-player-main :is([class^="activeContainer__"],[class*=" activeContainer__"]) { display:none!important; }
         `, // Elements/Styles：两种模式都注入，不隐藏宿主。第一组是广告位；第二组是站内付费活动推广：
            // 右侧活动挂件列（兄弟 #js-room-snapbar 是功能按钮）、钻粉榜顶部横幅、标题栏活动卡片、
            // 礼物栏左侧活动入口（兄弟是礼物/充值/背包）、充值回馈与钻粉定时推送。
@@ -318,7 +320,7 @@
 
     if (window.top !== window.self || !(BROWSER.isSafari || BROWSER.isChromium)) return;
     const navigation = isCleanMode() ? installRoomNavigationBoundary() : {stop() {}};
-    if (!DOUYU.roomPath.test(location.pathname)) return;
+    if (isCleanMode() && !DOUYU.roomPath.test(location.pathname)) return;
     if (window.__douyuSafariGuard) return;
 
 
@@ -583,9 +585,9 @@
     // Diagnostics — 在已有 tick 内收集适配契约；依赖 selectors/ids/runtime。
     // “found” 表示启动窗口曾找到，不是持续 DOM 存活断言；不保留节点引用。
     function createAdapterHealth() {
-        const started = performance.now(), contracts = {};
+        const contracts = {};
         const selectors = Object.entries(DOUYU.selectors), ids = Object.entries(DOUYU.ids);
-        let observationClosed = false, stopped = false;
+        let started = performance.now(), observationClosed = false, stopped = false;
         function record(name, found, applicable = true, failed = false) {
             const previous = contracts[name];
             contracts[name] = {state:!applicable ? 'not-applicable' : failed ? 'failed' :
@@ -597,8 +599,7 @@
                 if (stopped) return;
                 if (!observationClosed) {
                     for (const [name, selector] of selectors) {
-                        // The native sender is a clean-mode replacement service.
-                        const applicable = enabled || name !== 'senderInput';
+                        const applicable = enabled || !DOUYU.cleanOnlySelectors.includes(name);
                         const found = contracts['selector.' + name]?.state === 'found' ||
                             (applicable && !!document.querySelector(selector));
                         record('selector.' + name, found, applicable);
@@ -613,8 +614,13 @@
                 record('runtime.asideApp', !!DOUYU.runtime.asideApp(), enabled);
                 record('runtime.playerBridge', typeof DOUYU.runtime.player()?.acjCall === 'function', enabled);
                 record('rendererHooks', clean.rendererHooks > 0, enabled);
-                record('playerModuleHooks', clean.playerModuleHooks > 0, enabled);
+                record('playerModuleHooks', clean.playerModuleHooks > 0);
                 record('nativeSender', clean.nativeSender, enabled, clean.senderFailed);
+            },
+            restart() {
+                if (stopped) return;
+                started = performance.now(); observationClosed = false;
+                for (const key of Object.keys(contracts)) delete contracts[key];
             },
             status: () => ({windowMs:DISCOVERY_WINDOW_MS, observationClosed, stopped,
                 // Return copies: consumers must not mutate internal diagnostic state.
@@ -638,7 +644,7 @@
         const enabled = isCleanMode();
         const moduleTrim = createPlayerModuleTrim(enabled ?
             [...DOUYU.adPlayerModules, ...DOUYU.playerModules] : DOUYU.adPlayerModules);
-        const discoveryStartedAt = performance.now();
+        let discoveryStartedAt = performance.now(), lastPath = location.pathname;
         const health = createAdapterHealth();
         const removeIds = new Set(DOUYU.removeIds);
         const defaults = DOUYU.storageDefaults;
@@ -850,21 +856,25 @@
         }
         function tick() {
             if (stopped) return;
+            if (location.pathname !== lastPath) {
+                lastPath = location.pathname; discoveryStartedAt = performance.now();
+                health.restart(); // 完整模式保留 SPA 导航，每次换路径重新发现。
+            }
             if (enabled) {
                 if (!renderers.size) installRendererHooks();
                 unmountAuxiliary();
                 setupLayout();
                 setupNativeSender();
             }
-            if (performance.now() - discoveryStartedAt <= DISCOVERY_WINDOW_MS) moduleTrim.discover();
+            const discovering = performance.now() - discoveryStartedAt <= DISCOVERY_WINDOW_MS;
+            if (discovering) moduleTrim.discover();
             applyNativeControls(); setupAdStyle(); setupButton();
             health.observe(enabled, {rendererHooks:renderers.size, playerModuleHooks:moduleTrim?.hookCount(),
                 nativeSender:!!senderHost?.isConnected, senderFailed:failures.has('native-sender')});
-            // Preserve the existing 250 ms / 2 s cadence. Module discovery ends
-            // after the startup window; layout, controls and sender checks continue
-            // without video-frame polling or additional mutation observers.
+            // 简洁模式保留 250 ms / 2 s；完整模式发现期 1 s，之后 2 s，不新增 timer。
             attempts++;
-            timer=setTimeout(tick, attempts < 80 && (!renderers.size || !defaultsApplied) ? 250 : 2000);
+            timer=setTimeout(tick, enabled ? (attempts < 80 && (!renderers.size || !defaultsApplied) ? 250 : 2000) :
+                discovering ? 1000 : 2000);
         }
         tick();
         return {

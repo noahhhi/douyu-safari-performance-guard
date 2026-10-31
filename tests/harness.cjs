@@ -8,6 +8,7 @@ const names = ['installRoomNavigationBoundary', 'installPageLifecycle', 'createO
     'createPlayerModuleTrim', 'createAdapterHealth', 'createDiagnostics', 'createCleanController',
     'installStartupQuality', 'createPreloadGuard', 'installAnalyticsSinks', 'createQualityRecovery', 'categoryEnabled'];
 function load(context = {}) {
+    context.location ??= {href:'https://www.douyu.com/93589', pathname:'/93589', origin:'https://www.douyu.com'};
     context.navigator ??= {userAgent:'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Version/26.0 Safari/605.1.15'};
     vm.createContext(context);
     vm.runInContext(config + functions + '\nObject.assign(globalThis, {DOUYU, BROWSER, DISCOVERY_WINDOW_MS, ' + names.join(',') + '});', context);

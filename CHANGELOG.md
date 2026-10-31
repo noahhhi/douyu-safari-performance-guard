@@ -12,7 +12,8 @@
 - 播放器模块发现改为启动后 20 秒内持续进行；DOM 插入挂钩跳过无关节点，减少每条弹幕的固定开销。
 - 冻结炫彩弹幕的背景动画（保留渐变与移动）。
 - localStorage 分类开关：`douyu-safari-disabled-categories` 临时关闭分类，`douyu-safari-enabled-categories` 启用代码中关闭的分类，用于排查与 A/B。
-- Chromium（Chrome / Edge + Tampermonkey MV3）放行执行：FLV preload 中和仅在 Safari 生效，其余机制共用；诊断新增 `browser` 与 `livePreloadGuardEnabled`。Chromium 尚待真实浏览器回归。
+- 完整模式在非直播间页面也装上去广告层，并在路径变化后重新发现播放器模块；完整模式检查频率降为 1 秒/2 秒；诊断按模式区分适用项；含 `:has()`/`:is()` 的广告选择器拆为独立规则。
+- Chromium（Chrome / Edge + Tampermonkey MV3）放行执行：FLV preload 中和仅在 Safari 生效，其余机制共用；诊断新增 `browser` 与 `livePreloadGuardEnabled`。已在 Chrome 156 实测（见验证说明）。
 - 验证见 [v3.7.0 验证说明](docs/validation-3.7.md)。
 
 ## 3.6.1 — 2026-09-21
