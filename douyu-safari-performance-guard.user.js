@@ -252,6 +252,7 @@
             firstStream: /^\/(?:lapi\/live\/getH5PlayV1|gapi\/live\/web\/super\/stream\/v1)\/\d+$/, // Network：同源 POST 首流接口。
             rateField: /(?:^|&)rate=([^&]*)/, rateReplace: /(^|&)rate=[^&]*/, // Network：form body 的档位；原生自动档为 -1。
             originalRateBody: '$1rate=0', // Network/画质设置：原画/最高档为 0；只改首个请求，之后用户手动切档不受影响。
+            p2pFields: ['p2p','h265_p2p'], // 流参数：两项须同时置数字 0，单清 p2p 会降为 H.264；也避免 preload 换流重启。
             liveMedia: /\.flv$/i, // Network：无尽直播 FLV；只阻止 fetch preload，不拦播放器请求。
         },
         runtime: {
@@ -934,23 +935,24 @@
         };
     }
 
-    // Startup quality — 首次自动档请求与视频诊断；依赖 endpoints、storageKeys.preload、selectors.videoCase。
+    // Startup quality — 首流原画、持续关闭 P2P 与视频诊断；依赖 endpoints、storageKeys.preload、selectors.videoCase。
     function installStartupQuality() {
         const nativeFetch = window.fetch;
-        let handled = false, request = null, firstVideo = null, fetchHookReleased = false;
+        let handled = false, request = null, firstVideo = null, fetchHookReleased = false, p2pCleared = 0;
         // The first-stream loader can consume a cached automatic/4M response
         // before consulting any player preference. Request fresh original quality.
         try { localStorage.removeItem(DOUYU.storageKeys.preload); } catch {}
         const wrappedFetch = function (input, init) {
-            let nextInit = init;
-            if (!handled && typeof init?.body === 'string' &&
+            let nextInit = init, streamRequest = false;
+            if (typeof init?.body === 'string' &&
                 String(init.method || 'GET').toUpperCase() === 'POST' &&
                 (typeof input === 'string' || input instanceof URL)) {
                 let url;
                 try { url = new URL(input, location.href); } catch {}
                 if (url?.origin === location.origin &&
                     DOUYU.endpoints.firstStream.test(url.pathname)) {
-                    const match = init.body.match(DOUYU.endpoints.rateField);
+                    streamRequest = true;
+                    const match = !handled && init.body.match(DOUYU.endpoints.rateField);
                     if (match) {
                         handled = true;
                         const from = match[1];
@@ -959,12 +961,26 @@
                         if (from !== '0') nextInit = {...init,
                             body:init.body.replace(DOUYU.endpoints.rateReplace,DOUYU.endpoints.originalRateBody)};
                         request = {atMs:Math.round(performance.now()), path:url.pathname, fromRate:from, sentRate:'0'};
-                        if (window.fetch === wrappedFetch) window.fetch = nativeFetch;
-                        fetchHookReleased = true;
                     }
                 }
             }
-            return Reflect.apply(nativeFetch, this, nextInit === init ? arguments : [input,nextInit]);
+            const result = Reflect.apply(nativeFetch, this, nextInit === init ? arguments : [input,nextInit]);
+            if (!streamRequest) return result;
+            return result.then(response => {
+                const nativeJson = response.json;
+                // 只改本次响应的 json；后续手动切档/线路和回退也不能重新启用 P2P。
+                response.json = function () {
+                    return Reflect.apply(nativeJson, this, arguments).then(body => {
+                        if (Number(body?.error) === 0 && body.data &&
+                            typeof body.data === 'object' && !Array.isArray(body.data)) {
+                            for (const field of DOUYU.endpoints.p2pFields) body.data[field] = 0;
+                            p2pCleared++;
+                        }
+                        return body;
+                    });
+                };
+                return response;
+            });
         };
         window.fetch = wrappedFetch;
         function metadata(event) {
@@ -975,8 +991,8 @@
         }
         for (const type of ['loadedmetadata','loadeddata','resize']) document.addEventListener(type, metadata, true);
         return {
-            status:()=>({request,firstVideo,fetchHookReleased}),
-            stop:()=>{handled=true;fetchHookReleased=true;if(window.fetch===wrappedFetch)window.fetch=nativeFetch;
+            status:()=>({request,firstVideo,fetchHookReleased,p2pCleared}),
+            stop:()=>{handled=true;if(window.fetch===wrappedFetch){window.fetch=nativeFetch;fetchHookReleased=true;}
                 for (const type of ['loadedmetadata','loadeddata','resize']) document.removeEventListener(type,metadata,true);},
         };
     }

@@ -107,6 +107,8 @@ localStorage.setItem('douyu-safari-disabled-categories', 'roomWidgets,analytics'
 
 Safari 版 Tampermonkey 不保证 `document-start` 先于页面脚本；Chromium 版只有 **UserScripts API Dynamic** 注入模式能保证。`status().readyStateAtInstall` / `installedAtMs` 记录实际注入时刻，`startupQuality.request` 为空时说明首流已错过改写（脚本注入前请求已发出）。此时 `createQualityRecovery()` 在播放器 store 就绪后调用一次原生 `handleAcj('loadWithoutPerception','changeRate',[{rate:0, manual:true}])`；`status().qualityRecovery.phase` 说明结果（`issued`、`already-original`、`native-change`、`user-input`、`timeout` 等）。斗鱼改版后若长期为 `timeout` 且 `last` 为空，先检查 `runtime.playerStore` 与 h5-plugin 的 `mapStateToProps` 字段。
 
+简洁模式还会持续包装同源首流接口（`endpoints.firstStream`）的 POST 响应 `json()`：成功且 `data` 为非数组对象时，将 `data.p2p` / `data.h265_p2p` 同时置为数字 `0`（契约 `endpoints.p2pFields`），其余流参数不变。只清 `p2p` 会让播放器降为 H.264；两项一起清除也会取消首流约 5 秒后的 preload 替换重启，避免加载约 10 秒后因 `dyp2pxp2p` SDK 被内容拦截器阻断、`P2PInitError` 销毁播放器而黑屏约 4 秒。后续手动切档、切线路和回退响应仍需清除 P2P，但只有首个带档位的请求改写 `rate=0`；hook 保留到 `stop()`，`startupQuality.p2pCleared` 记录处理数，`fetchHookReleased` 仅在停止时实际恢复 fetch 后为真。完整模式不安装这个 hook，不清除 P2P，也不改写画质。
+
 ## 其他契约的维护边界
 
 - `storageDefaults`、`storageKeys`、`storageEnvelope`：在原生 UI 更改一次设置，再对照 Storage 中的 key、枚举及 c/e/v/r 封装。`shieldKeys` 是事件参数，`shieldStorageKeys` / `shieldPersistence` 是存储参数，注意 `smallGift` 与 `smallgift` 的区别。

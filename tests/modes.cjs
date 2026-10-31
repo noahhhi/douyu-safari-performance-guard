@@ -8,7 +8,7 @@ function run(mode, extra={}) {
     class Node {appendChild(node){return node;} insertBefore(node){return node;} replaceChild(node){return node;}}
     class Element extends Node {append(){} prepend(){}}
     const appendChild = Node.prototype.appendChild;
-    const fetch = (...args) => {calls.push(args);return 'native-result';}, pushState = () => {}, replaceState = () => {};
+    const fetch = (...args) => {calls.push(args);return Promise.resolve({json:()=>Promise.resolve({error:0,data:{p2p:1,h265_p2p:1}})});}, pushState = () => {}, replaceState = () => {};
     const window = {addEventListener:type=>listeners.push(type), removeEventListener(){}, fetch};
     window.top = window.self = window;
     const context = {URL, Node, Element, window, navigator:{userAgent:'AppleWebKit Safari'},
@@ -22,11 +22,16 @@ function run(mode, extra={}) {
     vm.runInNewContext(source, context);
     return {api:window.__douyuSafariGuard, window, context, writes, listeners, fetch, pushState, replaceState, appendChild, calls, timers};
 }
+(async () => {
 {
     const full = run('off'), status = full.api.status();
     assert.equal(status.mode, 'full');
     assert.deepEqual(full.writes, [], 'no player/quality/danmaku preference writes');
     assert.equal(full.window.fetch, full.fetch, 'first-stream request untouched');
+    const init={method:'POST',body:'rate=4'};
+    const response=await full.window.fetch('/lapi/live/getH5PlayV1/93589',init);
+    assert.equal(full.calls.at(-1)[1],init);
+    assert.deepEqual(await response.json(),{error:0,data:{p2p:1,h265_p2p:1}},'full mode preserves P2P fields');
     assert.equal(full.context.history.pushState, full.pushState, 'no navigation boundary');
     assert.equal(full.window.__douyuRoomNavigation, undefined);
     assert.ok(!full.listeners.includes('pagehide'), 'no exit disposal');
@@ -80,7 +85,8 @@ for (const mode of ['off', null]) {
 // First-stream rewrite: preserve an already-original init and never match bitrate as rate.
 for (const body of ['rate=0', 'bitrate=4&rate=2']) {
     const h = run(null), init = {method:'POST', body, credentials:'include'};
-    assert.equal(h.window.fetch('/lapi/live/getH5PlayV1/93589', init), 'native-result');
+    const response=await h.window.fetch('/lapi/live/getH5PlayV1/93589', init);
+    assert.deepEqual(await response.json(),{error:0,data:{p2p:0,h265_p2p:0}});
     const sent = h.calls.at(-1)[1];
     if (body === 'rate=0') assert.equal(sent, init, 'first original request passes through the same init');
     else {
@@ -89,9 +95,12 @@ for (const body of ['rate=0', 'bitrate=4&rate=2']) {
         assert.equal(sent.credentials, 'include');
     }
     assert.equal(init.body, body);
-    assert.equal(h.window.fetch, h.fetch, 'fetch hook released after the first matching request');
-    assert.equal(h.api.status().startupQuality.fetchHookReleased, true);
+    assert.notEqual(h.window.fetch, h.fetch, 'fetch hook stays installed for later stream responses');
+    assert.equal(h.api.status().startupQuality.fetchHookReleased, false);
+    assert.equal(h.api.status().startupQuality.p2pCleared, 1);
     h.api.disable();
+    assert.equal(h.window.fetch, h.fetch, 'disable restores the native fetch');
+    assert.equal(h.api.status().startupQuality.fetchHookReleased, true);
 }
 // Unsupported functional selectors must not invalidate the simple ads rule.
 {
@@ -128,3 +137,4 @@ for (const body of ['rate=0', 'bitrate=4&rate=2']) {
     assert.deepEqual(trimmed(null), {hyad:true, recommendAD:true, videoAd:true, shelterAd:true, hitSong:true, comment:false, controller:false});
 }
 console.log('Clean/full modes: full mode removes ads only and leaves quality, navigation, lifecycle and preferences alone: passed');
+})().catch(error=>{console.error(error);process.exitCode=1;});
