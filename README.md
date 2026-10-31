@@ -1,8 +1,8 @@
 # Douyu Safari Performance Guard
 
-斗鱼直播纯净模式与内存优化用户脚本，适用于 Safari，并提供 Chrome / Edge（Chromium）兼容入口。Chromium 尚待真实浏览器回归；保留原项目和脚本名称以维持更新连续性。保留**视频播放、弹幕（含发送）和视频控制**，减少非核心业务的加载和运行。
+斗鱼直播纯净模式与内存优化用户脚本，适用于 Safari，并提供 Chrome / Edge（Chromium）兼容入口。Chrome 156 已实测（Edge 未测）；保留原项目和脚本名称以维持更新连续性。保留**视频播放、弹幕（含发送）和视频控制**，减少非核心业务的加载和运行。
 
-Safari and Chromium userscript for lean Douyu live playback (Chromium validation pending). Keeps video, danmaku and native controls while preventing unnecessary resource loading.
+Safari and Chromium userscript for lean Douyu live playback (validated on Chrome 156; Edge untested). Keeps video, danmaku and native controls while preventing unnecessary resource loading.
 
 [安装最新版本](https://github.com/noahhhi/douyu-safari-performance-guard/releases/latest/download/douyu-safari-performance-guard.user.js) · [版本发布](https://github.com/noahhhi/douyu-safari-performance-guard/releases) · [问题反馈](https://github.com/noahhhi/douyu-safari-performance-guard/issues)
 
@@ -31,7 +31,7 @@ Safari and Chromium userscript for lean Douyu live playback (Chromium validation
 3. 若 Safari 只下载了文件，在 Tampermonkey 控制台新建脚本，粘贴 `.user.js` 的完整内容并保存。也可打开 [v3.6.1 原始脚本](https://raw.githubusercontent.com/noahhhi/douyu-safari-performance-guard/v3.6.1/douyu-safari-performance-guard.user.js)。
 4. 重新加载斗鱼直播间。只启用一份本脚本，避免多个净化脚本同时修改播放器。
 
-简洁模式生效范围是 `https://www.douyu.com/数字房间号` 或 `https://douyu.com/数字房间号`。在斗鱼其他路径，简洁模式只安装切房导航监听，完整模式只安装广告层，以覆盖从目录进入直播间的单页路由；不在 iframe 中运行。Chrome / Edge 的 Chromium 版本可执行本脚本，真实播放与内存效果尚待验证。Firefox 仍不执行。其他脚本管理器、其他 Chromium 衍生版、手机浏览器及别名房间路径未经验证。
+简洁模式生效范围是 `https://www.douyu.com/数字房间号` 或 `https://douyu.com/数字房间号`。在斗鱼其他路径，简洁模式只安装切房导航监听，完整模式只安装广告层，以覆盖从目录进入直播间的单页路由；不在 iframe 中运行。Chrome / Edge 的 Chromium 版本可执行本脚本；Chrome 156 的播放、弹幕、登录与内存结果见验证说明，Edge 未测。Firefox 仍不执行。其他脚本管理器、其他 Chromium 衍生版、手机浏览器及别名房间路径未经验证。
 
 ### Chrome / Edge（Tampermonkey MV3）
 
