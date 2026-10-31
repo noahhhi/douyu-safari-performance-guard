@@ -313,7 +313,7 @@
         return Object.freeze({isSafari, isChromium, guardLivePreload:isSafari});
     })();
     // Mode — 简洁模式：只保留最高画质视频与弹幕观看/发送，其余一律不加载；
-    // 完整模式：只去广告，不改页面、画质、弹幕设置和导航。工厂各自读取，切换按钮写入并重载。
+    // 完整模式：去广告并关闭 P2P，不改页面、画质、弹幕设置和导航。切换按钮写入并重载。
     function isCleanMode() {
         try { return localStorage.getItem(DOUYU.storageKeys.cleanMode) !== 'off'; } catch { return true; }
     }
@@ -935,13 +935,13 @@
         };
     }
 
-    // Startup quality — 首流原画、持续关闭 P2P 与视频诊断；依赖 endpoints、storageKeys.preload、selectors.videoCase。
-    function installStartupQuality() {
+    // Stream params — 两种模式关闭 P2P，按需首流原画；依赖 endpoints、storageKeys.preload、selectors.videoCase。
+    function installStreamParams({originalQuality = false} = {}) {
         const nativeFetch = window.fetch;
         let handled = false, request = null, firstVideo = null, fetchHookReleased = false, p2pCleared = 0;
         // The first-stream loader can consume a cached automatic/4M response
         // before consulting any player preference. Request fresh original quality.
-        try { localStorage.removeItem(DOUYU.storageKeys.preload); } catch {}
+        if (originalQuality) try { localStorage.removeItem(DOUYU.storageKeys.preload); } catch {}
         const wrappedFetch = function (input, init) {
             let nextInit = init, streamRequest = false;
             if (typeof init?.body === 'string' &&
@@ -952,7 +952,7 @@
                 if (url?.origin === location.origin &&
                     DOUYU.endpoints.firstStream.test(url.pathname)) {
                     streamRequest = true;
-                    const match = !handled && init.body.match(DOUYU.endpoints.rateField);
+                    const match = originalQuality && !handled && init.body.match(DOUYU.endpoints.rateField);
                     if (match) {
                         handled = true;
                         const from = match[1];
@@ -1237,11 +1237,11 @@
         return {status:() => ({phase, issued, last:last && {...last}}), stop:() => finish('stopped')};
     }
 
-    // 完整模式只装广告相关部分：资源 gate（仅 ads 分类）、DOM 插入挂钩、广告模块卸载与 CSS。
+    // 完整模式只装广告相关部分与 P2P 清除；画质、导航和生命周期仍由原生处理。
     const cleanMode = isCleanMode();
     const analytics = installAnalyticsSinks();
     const optionalResources = createOptionalResourceGate();
-    const startupQuality = cleanMode ? installStartupQuality() : null;
+    const startupQuality = installStreamParams({originalQuality:cleanMode});
     let clean;
     try { clean = createCleanController(); } catch {}
     let quality;

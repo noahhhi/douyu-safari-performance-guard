@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const {load, source} = require('./harness.cjs');
-// Full mode removes ads only: run the whole userscript and check it leaves every other page behaviour alone.
+// Full mode removes ads and P2P: quality, preferences and normal navigation remain native.
 function run(mode, extra={}) {
     const storage = new Map(mode ? [['douyu-safari-clean-mode', mode]] : []), writes = [], listeners = [];
     const timers = new Map(), calls = []; let nextTimer = 0;
@@ -27,15 +27,24 @@ function run(mode, extra={}) {
     const full = run('off'), status = full.api.status();
     assert.equal(status.mode, 'full');
     assert.deepEqual(full.writes, [], 'no player/quality/danmaku preference writes');
-    assert.equal(full.window.fetch, full.fetch, 'first-stream request untouched');
-    const init={method:'POST',body:'rate=4'};
-    const response=await full.window.fetch('/lapi/live/getH5PlayV1/93589',init);
-    assert.equal(full.calls.at(-1)[1],init);
-    assert.deepEqual(await response.json(),{error:0,data:{p2p:1,h265_p2p:1}},'full mode preserves P2P fields');
+    assert.notEqual(full.window.fetch, full.fetch, 'full mode installs P2P response clearing');
+    for (const body of ['rate=4&cdn=manual', 'rate=-1', 'other=1']) {
+        const init={method:'POST',body};
+        const response=await full.window.fetch('/lapi/live/getH5PlayV1/93589',init);
+        assert.equal(full.calls.at(-1)[1],init,'full mode passes the original init through');
+        assert.equal(init.body,body,'no rate rewrite');
+        assert.deepEqual(await response.json(),{error:0,data:{p2p:0,h265_p2p:0}},'full mode clears P2P fields');
+    }
+    const other=await full.window.fetch('/other/path',{method:'POST',body:'rate=4'});
+    assert.deepEqual(await other.json(),{error:0,data:{p2p:1,h265_p2p:1}},'non-stream responses stay native');
+    assert.deepEqual(full.writes, [], 'full mode never writes or removes localStorage while handling streams');
+    assert.equal(full.api.status().startupQuality.request,null);
+    assert.equal(full.api.status().startupQuality.p2pCleared,3);
     assert.equal(full.context.history.pushState, full.pushState, 'no navigation boundary');
     assert.equal(full.window.__douyuRoomNavigation, undefined);
     assert.ok(!full.listeners.includes('pagehide'), 'no exit disposal');
-    assert.equal(status.startupQuality, null);
+    assert.equal(status.startupQuality.request, null);
+    assert.equal(status.startupQuality.p2pCleared, 0);
     assert.equal(status.qualityRecovery, undefined);
     assert.equal(status.livePreloadGuardEnabled, false);
     assert.equal(status.analyticsSinks.length, 0);
@@ -47,6 +56,7 @@ function run(mode, extra={}) {
     const clean = run(null), status = clean.api.status();
     assert.equal(status.mode, 'clean', 'clean mode is the default');
     assert.ok(clean.writes.includes('realRateModel2_h5p_room'), 'clean mode applies startup defaults');
+    assert.ok(clean.writes.includes('-h5StreamPreload_h5p_room'), 'clean mode removes the stream preload cache');
     assert.notEqual(clean.window.fetch, clean.fetch);
     assert.ok(clean.listeners.includes('pagehide'));
     assert.equal(status.livePreloadGuardEnabled, true);
@@ -62,7 +72,7 @@ for (const mode of ['off', null]) {
         assert.equal(h.window.__douyuRoomNavigation, undefined);
         assert.deepEqual(h.listeners, [], 'no navigation or lifecycle listeners');
         assert.deepEqual(h.writes, []);
-        assert.equal(h.window.fetch, h.fetch);
+        assert.notEqual(h.window.fetch, h.fetch, 'P2P hook covers later SPA room entry');
         assert.notEqual(h.context.Node.prototype.appendChild, h.appendChild, 'ads-only DOM insertion hook installed');
         assert.equal(h.api.status().livePreloadGuardEnabled, false);
         const append = h.context.Node.prototype.appendChild, timerCount = h.timers.size;
@@ -136,5 +146,5 @@ for (const body of ['rate=0', 'bitrate=4&rate=2']) {
     assert.deepEqual(trimmed('off'), {hyad:true, recommendAD:true, videoAd:false, shelterAd:false, hitSong:false, comment:false, controller:false});
     assert.deepEqual(trimmed(null), {hyad:true, recommendAD:true, videoAd:true, shelterAd:true, hitSong:true, comment:false, controller:false});
 }
-console.log('Clean/full modes: full mode removes ads only and leaves quality, navigation, lifecycle and preferences alone: passed');
+console.log('Clean/full modes: both clear P2P; full mode leaves quality, navigation, lifecycle and preferences alone: passed');
 })().catch(error=>{console.error(error);process.exitCode=1;});

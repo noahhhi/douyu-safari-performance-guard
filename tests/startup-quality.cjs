@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const {load} = require('./harness.cjs');
-function harness(nativeResult = () => Promise.resolve({json:()=>Promise.resolve({error:0,data:{p2p:1,h265_p2p:1}})})) {
+function harness(nativeResult = () => Promise.resolve({json:()=>Promise.resolve({error:0,data:{p2p:1,h265_p2p:1}})}), originalQuality = true) {
     const calls=[], removed=[], listeners=new Map();
     const fetch=function(){
         const call={receiver:this,args:[...arguments]};calls.push(call);
@@ -9,8 +9,8 @@ function harness(nativeResult = () => Promise.resolve({json:()=>Promise.resolve(
     const c=load({URL,performance:{now:()=>123},location:{href:'https://www.douyu.com/93589',origin:'https://www.douyu.com'},
         localStorage:{removeItem:k=>removed.push(k)},window:{fetch},
         document:{addEventListener:(k,fn)=>listeners.set(k,fn),removeEventListener:k=>listeners.delete(k)}});
-    const quality=c.installStartupQuality();
-    assert.deepEqual(removed,['h5StreamPreload_h5p_room']);
+    const quality=c.installStreamParams({originalQuality});
+    assert.deepEqual(removed,originalQuality ? ['h5StreamPreload_h5p_room'] : []);
     return {c,quality,calls,fetch,listeners};
 }
 (async () => {
@@ -53,6 +53,20 @@ for (const path of ['/lapi/live/getH5PlayV1/93589','/gapi/live/web/super/stream/
     const stoppedResponse=await c.window.fetch(path,manual);
     assert.deepEqual(await stoppedResponse.json(),{error:0,data:{p2p:1,h265_p2p:1}});
     assert.equal(quality.status().p2pCleared,2);
+}
+// Full mode keeps both endpoint requests intact, including rate, receiver and extra arguments.
+for (const path of ['/lapi/live/getH5PlayV1/93589','/gapi/live/web/super/stream/v1/93589']) {
+    const {c,quality,calls,fetch}=harness(undefined,false), receiver={}, extra={};
+    for (const body of ['rate=4&cdn=manual','rate=-1','other=1']) {
+        const init={method:'POST',body,credentials:'include'};
+        const response=await c.window.fetch.call(receiver,path,init,extra);
+        assert.deepEqual(calls.at(-1).args,[path,init,extra]);
+        assert.equal(calls.at(-1).args[1],init);assert.equal(calls.at(-1).receiver,receiver);
+        assert.equal(init.body,body);assert.equal(quality.status().request,null);
+        assert.deepEqual(await response.json(),{error:0,data:{p2p:0,h265_p2p:0}});
+    }
+    assert.equal(quality.status().p2pCleared,3);
+    quality.stop();assert.equal(c.window.fetch,fetch);assert.equal(quality.status().fetchHookReleased,true);
 }
 const path='/lapi/live/getH5PlayV1/93589';
 for (const rate of ['4','0']) {

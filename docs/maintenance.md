@@ -34,7 +34,7 @@ console.table(s?.adapterHealth?.contracts);
 旧诊断字段全部保留：`blockedLivePreloads` / `latePreloads`、`optionalResources`、`startupQuality`、`clean`、`lifecycle`、`cleanupErrors` 等。特别注意：
 
 - `optionalResources.late` 代表节点可能已开始加载，不能宣称已阻止；`count` / `paths` 仅记录加载前命中，路径计数仍有 128 项上限。
-- `startupQuality.request` 的路径、`fromRate`、`sentRate` 用来核实首流接口。无记录时检查 `endpoints.firstStream`、POST form body 和 `storageKeys.preload`，不要改写后续用户主动切档。
+- `startupQuality` 在两种模式均有值；`request` 的路径、`fromRate`、`sentRate` 用来核实简洁模式首流改写，完整模式的 `request` 始终为 `null`。简洁模式无记录时检查 `endpoints.firstStream`、POST form body 和 `storageKeys.preload`，不要改写后续用户主动切档。
 - `clean.playerModules.modules` 是实际见过的模块，`hooks` 是连接器原型数，二者不必相等。`visits` 在初始 20 秒内继续增长是预期行为，首次发现成功不再提前终止。
 - `clean.disposedRoots` / `releasedMedia` 与 `cleanupErrors` 用来验证离开页面时的释放；清理成功不等于 WebKit 已回收全部内存。
 
@@ -56,7 +56,7 @@ console.table(s?.adapterHealth?.contracts);
 
 在相应分类的 `packages` 中添加一行包名并注释证据。它只匹配 `resourceHost` CDN 主机上 `front-publish/<包名>/...` 的 script/link，不扩展到 iframe 或任意同名第三方路径。
 
-将分类的 `enabled` 改为 `false` 可停止该分类的资源拦截，包括标记为同分类的 SDK/iframe；此开关**不是**卸载模块或 CSS 布局开关，也不恢复已取消的加载。分类默认只在简洁模式生效；只有标记 `fullMode:true` 的分类（目前仅 `ads`）在完整模式也生效。完整模式只去广告，不要给非广告分类加 `fullMode`。
+将分类的 `enabled` 改为 `false` 可停止该分类的资源拦截，包括标记为同分类的 SDK/iframe；此开关**不是**卸载模块或 CSS 布局开关，也不恢复已取消的加载。分类默认只在简洁模式生效；只有标记 `fullMode:true` 的分类（目前仅 `ads`）在完整模式也生效。完整模式的资源 gate 只去广告，不要给非广告分类加 `fullMode`；P2P 流参数由独立的 fetch hook 处理。
 
 ### 指定主机、包和文件
 
@@ -105,9 +105,9 @@ localStorage.setItem('douyu-safari-disabled-categories', 'roomWidgets,analytics'
 
 ## 注入时机与画质补救
 
-Safari 版 Tampermonkey 不保证 `document-start` 先于页面脚本；Chromium 版只有 **UserScripts API Dynamic** 注入模式能保证。`status().readyStateAtInstall` / `installedAtMs` 记录实际注入时刻，`startupQuality.request` 为空时说明首流已错过改写（脚本注入前请求已发出）。此时 `createQualityRecovery()` 在播放器 store 就绪后调用一次原生 `handleAcj('loadWithoutPerception','changeRate',[{rate:0, manual:true}])`；`status().qualityRecovery.phase` 说明结果（`issued`、`already-original`、`native-change`、`user-input`、`timeout` 等）。斗鱼改版后若长期为 `timeout` 且 `last` 为空，先检查 `runtime.playerStore` 与 h5-plugin 的 `mapStateToProps` 字段。
+Safari 版 Tampermonkey 不保证 `document-start` 先于页面脚本；Chromium 版只有 **UserScripts API Dynamic** 注入模式能保证。`status().readyStateAtInstall` / `installedAtMs` 记录实际注入时刻，简洁模式中 `startupQuality.request` 为空时可能是首流已错过改写（脚本注入前请求已发出）。此时 `createQualityRecovery()` 在播放器 store 就绪后调用一次原生 `handleAcj('loadWithoutPerception','changeRate',[{rate:0, manual:true}])`；`status().qualityRecovery.phase` 说明结果（`issued`、`already-original`、`native-change`、`user-input`、`timeout` 等）。斗鱼改版后若长期为 `timeout` 且 `last` 为空，先检查 `runtime.playerStore` 与 h5-plugin 的 `mapStateToProps` 字段。
 
-简洁模式还会持续包装同源首流接口（`endpoints.firstStream`）的 POST 响应 `json()`：成功且 `data` 为非数组对象时，将 `data.p2p` / `data.h265_p2p` 同时置为数字 `0`（契约 `endpoints.p2pFields`），其余流参数不变。只清 `p2p` 会让播放器降为 H.264；两项一起清除也会取消首流约 5 秒后的 preload 替换重启，避免加载约 10 秒后因 `dyp2pxp2p` SDK 被内容拦截器阻断、`P2PInitError` 销毁播放器而黑屏约 4 秒。后续手动切档、切线路和回退响应仍需清除 P2P，但只有首个带档位的请求改写 `rate=0`；hook 保留到 `stop()`，`startupQuality.p2pCleared` 记录处理数，`fetchHookReleased` 仅在停止时实际恢复 fetch 后为真。完整模式不安装这个 hook，不清除 P2P，也不改写画质。
+两种模式都通过 `installStreamParams({originalQuality:cleanMode})` 持续包装同源首流接口（`endpoints.firstStream`）的 POST 响应 `json()`：成功且 `data` 为非数组对象时，将 `data.p2p` / `data.h265_p2p` 同时置为数字 `0`（契约 `endpoints.p2pFields`），其余流参数不变。只清 `p2p` 会让播放器降为 H.264；两项一起清除保留原画与 H.265 能力、避免 P2P 上传，也会取消首流约 5 秒后的 preload 替换重启，避免加载约 10 秒后因 `dyp2pxp2p` SDK 被内容拦截器阻断、`P2PInitError` 销毁播放器而黑屏约 4 秒。后续手动切档、切线路和回退响应仍需清除 P2P；只有简洁模式移除 `storageKeys.preload` 缓存并将首个带档位的请求改写 `rate=0`，完整模式原样传递请求且不写入或移除 localStorage。hook 保留到 `stop()`，兼容诊断键 `startupQuality` 在两种模式都有值，完整模式的 `request` 始终为 `null`；`p2pCleared` 记录处理数，`fetchHookReleased` 仅在停止时实际恢复 fetch 后为真。
 
 ## 其他契约的维护边界
 
@@ -115,7 +115,7 @@ Safari 版 Tampermonkey 不保证 `document-start` 先于页面脚本；Chromium
 - `removeIds`：只允许独立辅助 React 根。不要把播放器或发送/登录/聊天通信根加入列表。切换模式依靠重新加载，不尝试在原地恢复已卸载业务。
 - 广告判定看商业素材来源（广告位 id、`/japi/sign`、`dyadx`、竞价/星海素材），不看名字：`shelterAd` 名称含 Ad 但只是遮挡矩形；`InteractABAd`、`live-business-component` 混有充值/背包/主播商店，只能去其中的广告叶子节点。静态证据见 2026-10-31 调研。
 - `playerModules` 只在简洁模式卸载；`adPlayerModules` 是播放器广告，两种模式都卸载。`adCSS` 两种模式都注入，`cleanCSS` 只用于简洁模式布局。
-- 非房间路径：简洁模式只安装切房导航边界；完整模式安装广告层且保留原生 SPA 导航，发现期每秒检查一次，之后每两秒一次。
+- 非房间路径：简洁模式只安装切房导航边界；完整模式安装广告层与 P2P 流参数处理且保留原生 SPA 导航，发现期每秒检查一次，之后每两秒一次。
 - `playerModules`：通过 React 自身更新触发真实子树卸载，不直接删 React DOM。初始或路径改变后的 20 秒内每次既有 tick 都可发现不同原型，之后停止发现；极慢加载或 20 秒后才出现的新原型可能不被覆盖。
 - `cleanCSS`：集中保存站点 CSS 前缀和布局关系；`data-dy-*`、`douyu-clean-*` 是本脚本拥有的标记，不是待猜测的站点选择器。
 - 导航、页面退出与 FLV preload 的浏览器语义不应与站点选择器一起盲改。继续保留修改键、下载、表单、跨域、query/hash 记账和历史遍历的排除条件。
@@ -131,7 +131,7 @@ Safari 版 Tampermonkey 不保证 `document-start` 先于页面脚本；Chromium
 5. `createPlayerModuleTrim`：原生可选模块发现与卸载。
 6. `createAdapterHealth` / `createDiagnostics`：轻量契约观测与兼容公开状态。
 7. `createCleanController`：原生设置、React 根清理、发送服务、布局和 tick。
-8. `installStartupQuality`：简洁模式把首个播放请求改为原画（无论原档位），并记录首次视频元数据。
+8. `installStreamParams`：两种模式持续关闭 P2P 并记录首次视频元数据；仅简洁模式清除首流缓存、把首个带档位的播放请求改为原画。
 9. `createPreloadGuard`：DOM 插入快路径、FLV preload 与原有 head fallback。
 10. `categoryEnabled` / `installAnalyticsSinks` / `createQualityRecovery`：分类临时开关、统计替身、晚注入画质补救。
 11. 文件末尾：模块装配、停止顺序、公开 `window.__douyuSafariGuard`。

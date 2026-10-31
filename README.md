@@ -11,7 +11,9 @@ Safari and Chromium userscript for lean Douyu live playback (validated on Chrome
 右上角按钮切换，切换后重新载入，并按站点记住选择（`www.douyu.com` 与 `douyu.com` 各自记忆），下次打开继续沿用。
 
 - **简洁模式**（默认）：只保留最高画质视频、弹幕显示与发送。页头、侧栏、礼物、活动、关注分组、底部推荐、统计等其余内容一律不加载。
-- **完整模式**：只去广告（播放器广告模块、房间广告位与广告节点），页面其余内容、画质、弹幕设置与导航全部保持斗鱼原样。
+- **完整模式**：去广告（播放器广告模块、房间广告位与广告节点）并关闭 P2P，页面其余内容、画质、弹幕设置与导航全部保持斗鱼原样。
+
+两种模式都关闭斗鱼的 P2P 流，保留原画与 H.265 能力，不改其余流参数；避免 P2P 上传，以及 P2P SDK 不可用时播放器重启造成约 4 秒黑屏。只有简洁模式会清除首流预加载缓存、将首个带档位的播放请求改为原画；完整模式保留原生档位和缓存。
 
 ## 简洁模式功能
 
@@ -31,14 +33,14 @@ Safari and Chromium userscript for lean Douyu live playback (validated on Chrome
 3. 若 Safari 只下载了文件，在 Tampermonkey 控制台新建脚本，粘贴 `.user.js` 的完整内容并保存。也可打开 [v3.6.1 原始脚本](https://raw.githubusercontent.com/noahhhi/douyu-safari-performance-guard/v3.6.1/douyu-safari-performance-guard.user.js)。
 4. 重新加载斗鱼直播间。只启用一份本脚本，避免多个净化脚本同时修改播放器。
 
-简洁模式生效范围是 `https://www.douyu.com/数字房间号` 或 `https://douyu.com/数字房间号`。在斗鱼其他路径，简洁模式只安装切房导航监听，完整模式只安装广告层，以覆盖从目录进入直播间的单页路由；不在 iframe 中运行。Chrome / Edge 的 Chromium 版本可执行本脚本；Chrome 156 的播放、弹幕、登录与内存结果见验证说明，Edge 未测。Firefox 仍不执行。其他脚本管理器、其他 Chromium 衍生版、手机浏览器及别名房间路径未经验证。
+简洁模式生效范围是 `https://www.douyu.com/数字房间号` 或 `https://douyu.com/数字房间号`。在斗鱼其他路径，简洁模式只安装切房导航监听，完整模式安装广告层与 P2P 流参数处理，以覆盖从目录进入直播间的单页路由；不在 iframe 中运行。Chrome / Edge 的 Chromium 版本可执行本脚本；Chrome 156 的播放、弹幕、登录与内存结果见验证说明，Edge 未测。Firefox 仍不执行。其他脚本管理器、其他 Chromium 衍生版、手机浏览器及别名房间路径未经验证。
 
 ### Chrome / Edge（Tampermonkey MV3）
 
 - 安装并启用 Tampermonkey，授予斗鱼网站访问权限。Chrome 138+ 在扩展详情启用 **Allow User Scripts（允许用户脚本）**；较旧 Chromium / Edge 如没有此开关，按管理器提示启用扩展页的开发者模式。参考 [Tampermonkey 说明](https://www.tampermonkey.net/faq.php?q=Q209)。
 - 为尽量保证早注入，在 Tampermonkey 设置中选用 **Content Script API → UserScripts API Dynamic**。普通 **UserScripts API** 模式仍需从后台取回脚本，不能保证真正的 document-start；不要因此删除晚注入补救。参见 [注入模式说明](https://www.tampermonkey.net/documentation.php?q=content_script_api)。安装或改设置后重新加载斗鱼页。
 - 保持 `@grant none` / `@sandbox raw`，让脚本在页面世界访问原生播放器、React 和 fetch。若页面控制台没有 `window.__douyuSafariGuard`，或适配诊断长期缺失，先检查权限、注入模式与执行世界，不要直接扩大资源阻断规则。
-- Chromium `status().livePreloadGuardEnabled` 应为 `false`；这不表示非核心资源 gate 关闭。脚本不强制 HEVC / H.264、WebCodecs、MSE 或 P2P 路径。下方 Safari 内存结果不适用于 Chromium。
+- Chromium `status().livePreloadGuardEnabled` 应为 `false`；这不表示非核心资源 gate 关闭。脚本不强制 HEVC / H.264、WebCodecs 或 MSE 路径；两种模式都关闭 P2P。下方 Safari 内存结果不适用于 Chromium。
 
 发布文件包含更新地址，后续版本可由 Tampermonkey 检查更新；是否自动安装取决于管理器设置。旧的本地版本如没有更新地址，需要手动安装公开版。保留原脚本名称与 namespace 便于识别已有安装，安装后请检查是否出现重复副本。
 
@@ -78,7 +80,7 @@ v3.6.1 已验证切房、前进/后退及目录退出时的清理，但连续导
 npm test
 ```
 
-测试覆盖脚本语法、发布元数据一致性、关键资源放行、简洁/完整模式（完整模式只去广告）、已开始加载的计数、原生播放器销毁、后台播放、导航排除条件与停止逻辑；另有配置规则、分类开关、适配健康诊断、启动窗口内模块发现和 DOM 插入快路径回归。自动测试不能替代真实 Safari / Chrome / Edge 播放验证。
+测试覆盖脚本语法、发布元数据一致性、关键资源放行、简洁/完整模式（两种模式关闭 P2P，完整模式不改画质与偏好）、已开始加载的计数、原生播放器销毁、后台播放、导航排除条件与停止逻辑；另有配置规则、分类开关、适配健康诊断、启动窗口内模块发现和 DOM 插入快路径回归。自动测试不能替代真实 Safari / Chrome / Edge 播放验证。
 
 网站更新时，先检查脚本顶部的 `DOUYU` 契约区和 `status().adapterHealth`。[维护指南](docs/maintenance.md) 说明如何找 chunk 名、修改规则、解读诊断和运行测试。
 

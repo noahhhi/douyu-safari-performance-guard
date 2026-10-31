@@ -6,7 +6,7 @@ const config = source.slice(source.indexOf('    const DOUYU = {'), source.indexO
 const functions = source.slice(source.indexOf('    function installRoomNavigationBoundary()'), source.indexOf('    const analytics = installAnalyticsSinks();'));
 const names = ['installRoomNavigationBoundary', 'installPageLifecycle', 'createOptionalResourceGate',
     'createPlayerModuleTrim', 'createAdapterHealth', 'createDiagnostics', 'createCleanController',
-    'installStartupQuality', 'createPreloadGuard', 'installAnalyticsSinks', 'createQualityRecovery', 'categoryEnabled'];
+    'installStreamParams', 'createPreloadGuard', 'installAnalyticsSinks', 'createQualityRecovery', 'categoryEnabled'];
 function load(context = {}) {
     context.location ??= {href:'https://www.douyu.com/93589', pathname:'/93589', origin:'https://www.douyu.com'};
     context.navigator ??= {userAgent:'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Version/26.0 Safari/605.1.15'};
